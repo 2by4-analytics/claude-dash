@@ -105,3 +105,52 @@ router.get('/debug/coc/:clientId', async (req, res) => {
 });
 
 module.exports = router;
+
+// Revenue debug endpoint
+router.get('/debug/revenue/:clientId', async (req, res) => {
+  try {
+    const client = getClient(req.params.clientId);
+    const { campaignId, startDate, endDate } = req.query;
+    const axios = require('axios');
+    
+    function fmtDate(d) {
+      const [y, m, day] = d.split('-');
+      return `${parseInt(m)}/${parseInt(day)}/${y.slice(2)}`;
+    }
+    
+    const account = client.adAccounts.find(a => String(a.cocCampaignId) === String(campaignId));
+    
+    // Fetch all COMPLETE orders
+    const r = await axios.get('https://api.checkoutchamp.com/order/query/', {
+      params: {
+        loginId: client.cocLoginId,
+        password: client.cocPassword,
+        campaignId,
+        startDate: fmtDate(startDate),
+        endDate: fmtDate(endDate),
+        orderStatus: 'COMPLETE',
+        orderType: 'NEW_SALE',
+        resultsPerPage: 200,
+      }
+    });
+
+    const orders = r.data.message?.data || [];
+    const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.totalAmount || 0), 0);
+    const nullAmounts = orders.filter(o => !o.totalAmount || o.totalAmount === null).length;
+    const orderSummary = orders.map(o => ({
+      orderId: o.orderId,
+      totalAmount: o.totalAmount,
+      hasUpsell: o.hasUpsell,
+      itemCount: Object.keys(o.items || {}).length,
+    }));
+    
+    res.json({ 
+      totalOrders: orders.length,
+      totalRevenue: totalRevenue.toFixed(2),
+      nullAmountCount: nullAmounts,
+      orders: orderSummary 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
