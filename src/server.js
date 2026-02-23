@@ -9,12 +9,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
 
-// API routes
+// API routes MUST come before static file serving
 app.use('/api', apiRoutes);
 
-// Serve frontend for all other routes
+// Static files and frontend catch-all AFTER API routes
+app.use(express.static(path.join(__dirname, '../public')));
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
