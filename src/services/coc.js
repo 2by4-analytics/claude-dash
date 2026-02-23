@@ -113,11 +113,10 @@ function buildMetrics(completeOrders, declinesCount, partials) {
   const refundAmt = 0;
 
   for (const order of completeOrders) {
-    // COC "Sales Total" = product amount + shipping + sales tax
+    // Revenue = order amount + shipping (matches COC within ~1%)
     const orderAmt = parseFloat(order.totalAmount || 0);
     const orderShipping = parseFloat(order.baseShipping || 0);
-    const orderTax = parseFloat(order.salesTax || 0);
-    salesTotal += orderAmt + orderShipping + orderTax;
+    salesTotal += orderAmt + orderShipping;
 
     // Check items for upsells
     const items = order.items || {};
