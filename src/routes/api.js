@@ -142,20 +142,29 @@ router.get('/debug/revenue/:clientId', async (req, res) => {
       totalAmount: o.totalAmount,
       baseShipping: o.baseShipping,
       salesTax: o.salesTax,
-      combined: (parseFloat(o.totalAmount||0) + parseFloat(o.baseShipping||0) + parseFloat(o.salesTax||0)).toFixed(2),
-      hasUpsell: o.hasUpsell,
-      itemCount: Object.keys(o.items || {}).length,
-    }));
+      surcharge: o.surcharge,
+      shipUpcharge: o.shipUpcharge,
+      combined: (parseFloat(o.totalAmount||0) + parseFloat(o.baseShipping||0) + parseFloat(o.salesTax||0) + parseFloat(o.surcharge||0) + parseFloat(o.shipUpcharge||0)).toFixed(2),
+    })).filter(o => parseFloat(o.baseShipping||0) > 0 || parseFloat(o.surcharge||0) > 0 || parseFloat(o.shipUpcharge||0) > 0);
     
-    const totalWithShippingTax = orders.reduce((sum, o) => 
-      sum + parseFloat(o.totalAmount||0) + parseFloat(o.baseShipping||0) + parseFloat(o.salesTax||0), 0);
+    const totalWithAll = orders.reduce((sum, o) => 
+      sum + parseFloat(o.totalAmount||0) + parseFloat(o.baseShipping||0) + parseFloat(o.salesTax||0) + parseFloat(o.surcharge||0) + parseFloat(o.shipUpcharge||0), 0);
+    
+    const totalShipping = orders.reduce((sum, o) => sum + parseFloat(o.baseShipping||0), 0);
+    const totalSurcharge = orders.reduce((sum, o) => sum + parseFloat(o.surcharge||0), 0);
+    const totalShipUpcharge = orders.reduce((sum, o) => sum + parseFloat(o.shipUpcharge||0), 0);
     
     res.json({ 
       totalOrders: orders.length,
       totalRevenue: totalRevenue.toFixed(2),
-      totalRevenueWithShippingTax: totalWithShippingTax.toFixed(2),
-      nullAmountCount: nullAmounts,
-      orders: orderSummary 
+      totalRevenueWithAll: totalWithAll.toFixed(2),
+      breakdown: {
+        totalAmount: totalRevenue.toFixed(2),
+        totalShipping: totalShipping.toFixed(2),
+        totalSurcharge: totalSurcharge.toFixed(2),
+        totalShipUpcharge: totalShipUpcharge.toFixed(2),
+      },
+      nonZeroOrders: orderSummary 
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
