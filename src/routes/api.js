@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const { getClients, getClientById } = require('../services/config');
 const { getFbHierarchy } = require('../services/fb');
 const { getCocHierarchy, getCocCampaignTotals } = require('../services/coc');
@@ -85,6 +86,78 @@ router.get('/dashboard/:clientId', async (req, res) => {
     adAccounts: results,
     errors: errors.length > 0 ? errors : undefined
   });
+});
+
+// ============================================================
+// DEBUG ENDPOINTS - dumps raw API responses so you can see field names
+// Usage: /api/debug/coc/:clientId?campaignId=1&startDate=2024-02-20&endDate=2024-02-20
+// Usage: /api/debug/fb/:clientId?adAccountId=act_XXX&startDate=2024-02-20&endDate=2024-02-20
+// ============================================================
+
+router.get('/debug/coc/:clientId', async (req, res) => {
+  const client = getClientById(req.params.clientId);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const { campaignId, startDate, endDate } = req.query;
+  if (!campaignId || !startDate || !endDate) {
+    return res.status(400).json({ error: 'Required: campaignId, startDate, endDate (YYYY-MM-DD)' });
+  }
+
+  const encoded = Buffer.from(`${client.cocLoginId}:${client.cocPassword}`).toString('base64');
+
+  // Try multiple likely endpoint patterns and return all results
+  const endpoints = [
+    { name: 'order-summary (POST)', method: 'post', url: 'https://app.checkoutchamp.com/api/reports/order-summary', body: { campaignId: parseInt(campaignId), startDate, endDate } },
+    { name: 'order-summary (GET)', method: 'get', url: `https://app.checkoutchamp.com/api/reports/order-summary?campaignId=${campaignId}&startDate=${startDate}&endDate=${endDate}` },
+    { name: 'transactions/query', method: 'post', url: 'https://app.checkoutchamp.com/api/transactions/query', body: { campaignId: parseInt(campaignId), startDate, endDate } },
+    { name: 'order/query', method: 'post', url: 'https://app.checkoutchamp.com/api/order/query', body: { campaignId: parseInt(campaignId), startDate, endDate } },
+  ];
+
+  const results = {};
+  for (const ep of endpoints) {
+    try {
+      const config = {
+        headers: { Authorization: `Basic ${encoded}`, 'Content-Type': 'application/json' }
+      };
+      const response = ep.method === 'post'
+        ? await axios.post(ep.url, ep.body, config)
+        : await axios.get(ep.url, config);
+      results[ep.name] = { status: response.status, data: response.data };
+    } catch (err) {
+      results[ep.name] = {
+        status: err.response?.status || 'network_error',
+        error: err.response?.data || err.message
+      };
+    }
+  }
+
+  res.json({ clientId: req.params.clientId, campaignId, dateRange: `${startDate} → ${endDate}`, results });
+});
+
+router.get('/debug/fb/:clientId', async (req, res) => {
+  const client = getClientById(req.params.clientId);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const { adAccountId, startDate, endDate } = req.query;
+  if (!adAccountId || !startDate || !endDate) {
+    return res.status(400).json({ error: 'Required: adAccountId, startDate, endDate (YYYY-MM-DD)' });
+  }
+
+  const FB_API_VERSION = process.env.FB_API_VERSION || 'v18.0';
+  try {
+    const response = await axios.get(`https://graph.facebook.com/${FB_API_VERSION}/${adAccountId}/insights`, {
+      params: {
+        access_token: client.fbAccessToken,
+        fields: 'campaign_name,adset_name,ad_name,spend',
+        level: 'ad',
+        time_range: JSON.stringify({ since: startDate, until: endDate }),
+        limit: 5
+      }
+    });
+    res.json({ raw: response.data });
+  } catch (err) {
+    res.json({ error: err.response?.data || err.message });
+  }
 });
 
 module.exports = router;
