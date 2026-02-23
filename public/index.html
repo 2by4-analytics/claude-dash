@@ -676,7 +676,7 @@ async function loadDashboard() {
 
     renderSummaryCards(data);
     renderTable(data);
-    renderAlerts(data);
+    await renderAlerts(data);
     document.getElementById('tableActions').style.display = 'flex';
   } catch (e) {
     setStatus('error', `Failed to load: ${e.message}`);
@@ -968,12 +968,23 @@ function buildRow({ key, level, tag, tagClass, name, subname, hasChildren, isCol
 // ============================================================
 // ALERTS PANEL — shows adsets/ads above their CPP target
 // ============================================================
-function renderAlerts(data) {
+async function renderAlerts(data) {
   const panel = document.getElementById('alertsPanel');
   const grid = document.getElementById('alertsGrid');
   const subtitle = document.getElementById('alertsSubtitle');
 
-  // Only show if we have cppTargets configured
+  // If cppTargets not loaded yet (race condition), try to populate from API
+  if (!Object.keys(cppTargets).length) {
+    try {
+      const r = await fetch('/api/clients');
+      const { clients } = await r.json();
+      for (const c of clients) {
+        for (const a of c.adAccounts || []) {
+          if (a.cppTarget) cppTargets[a.fbAdAccountId] = parseFloat(a.cppTarget);
+        }
+      }
+    } catch(e) {}
+  }
   if (!Object.keys(cppTargets).length) { panel.style.display = 'none'; return; }
 
   const flagged = [];
