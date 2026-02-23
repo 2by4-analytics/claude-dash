@@ -3,7 +3,7 @@ const router = express.Router();
 const axios = require('axios');
 const { getClients, getClientById } = require('../services/config');
 const { getFbHierarchy } = require('../services/fb');
-const { getCocHierarchy, getCocCampaignTotals, getCocRaw } = require('../services/coc');
+const { getCocHierarchy, getCocCampaignTotals } = require('../services/coc');
 const { mergeHierarchy } = require('../services/merger');
 
 // GET /api/clients

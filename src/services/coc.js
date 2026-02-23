@@ -2,98 +2,98 @@ const axios = require('axios');
 
 const COC_BASE = 'https://api.checkoutchamp.com';
 
-/**
- * COC uses GET requests with loginId & password as query params.
- * Base URL: https://api.checkoutchamp.com
- * Example: https://api.checkoutchamp.com/transactions/query/?loginId=X&password=Y&...
- */
-
-function baseParams(loginId, password) {
-  return { loginId, password };
-}
-
 function fmtDate(d) {
-  // COC expects M/D/YY format
+  // COC expects M/D/YY
   const [y, m, day] = d.split('-');
   return `${parseInt(m)}/${parseInt(day)}/${y.slice(2)}`;
 }
 
 /**
- * Fetch order summary stats for a campaign using transactions/query
- * Returns aggregated: partials, sales, declines, revenue etc.
+ * Fetch ALL pages from transactions/query
  */
-async function getCocStats(loginId, password, campaignId, dateStart, dateStop, utmFilters = {}) {
-  const params = {
-    ...baseParams(loginId, password),
+async function fetchAllTransactions(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
+  const baseParams = {
+    loginId,
+    password,
     campaignId,
     startDate: fmtDate(dateStart),
     endDate: fmtDate(dateStop),
-    ...(utmFilters.utm_campaign ? { utmCampaign: utmFilters.utm_campaign } : {}),
-    ...(utmFilters.utm_medium   ? { utmMedium:   utmFilters.utm_medium }   : {}),
-    ...(utmFilters.utm_content  ? { utmContent:  utmFilters.utm_content }  : {}),
+    resultsPerPage: 200,
+    orderType: "NEW_SALE",
+    billingCycleNumber: 1,
+    ...extraParams,
   };
 
-  try {
-    const r = await axios.get(`${COC_BASE}/transactions/query/`, { params });
-    return r.data;
-  } catch (err) {
-    const msg = err.response?.data || err.message;
-    throw new Error(`COC transactions/query error: ${JSON.stringify(msg)}`);
+  let page = 1;
+  let allRecords = [];
+  let totalResults = null;
+
+  while (true) {
+    try {
+      const r = await axios.get(`${COC_BASE}/transactions/query/`, {
+        params: { ...baseParams, page }
+      });
+
+      const data = r.data;
+      if (data.result !== 'SUCCESS') break;
+
+      const msg = data.message;
+      if (totalResults === null) totalResults = msg.totalResults || 0;
+
+      const records = msg.data || [];
+      allRecords = allRecords.concat(records);
+
+      // Stop if we have all records
+      if (allRecords.length >= totalResults || records.length === 0) break;
+      page++;
+    } catch (err) {
+      console.error('fetchAllTransactions page error:', err.message);
+      break;
+    }
   }
+
+  return allRecords;
 }
 
 /**
- * Fetch leads/partials for a campaign
+ * Aggregate transaction records into metrics
  */
-async function getCocLeads(loginId, password, campaignId, dateStart, dateStop, utmFilters = {}) {
-  const params = {
-    ...baseParams(loginId, password),
-    campaignId,
-    startDate: fmtDate(dateStart),
-    endDate: fmtDate(dateStop),
-    ...(utmFilters.utm_campaign ? { utmCampaign: utmFilters.utm_campaign } : {}),
-    ...(utmFilters.utm_medium   ? { utmMedium:   utmFilters.utm_medium }   : {}),
-    ...(utmFilters.utm_content  ? { utmContent:  utmFilters.utm_content }  : {}),
-  };
-
-  try {
-    const r = await axios.get(`${COC_BASE}/leads/query/`, { params });
-    return r.data;
-  } catch (err) {
-    return null; // non-fatal
-  }
-}
-
-/**
- * Build COC metrics from raw transactions/query response
- */
-function buildMetrics(txnData, leadData) {
-  if (!txnData || txnData.result !== 'SUCCESS') return null;
-
-  const records = txnData.message?.data || txnData.data || [];
-
-  let sales = 0, declines = 0, salesTotal = 0, upsells = 0, upsellTotal = 0, refundAmt = 0;
+function aggregateTransactions(records) {
+  let sales = 0, declines = 0, salesTotal = 0;
+  let upsells = 0, upsellTotal = 0, refundAmt = 0;
+  let shipping = 0;
 
   for (const row of records) {
     const type = (row.txnType || '').toUpperCase();
-    const status = (row.responseType || row.response_type || '').toUpperCase();
-    const amt = parseFloat(row.totalAmount || row.total_amount || row.amount || 0);
+    const status = (row.responseType || '').toUpperCase();
+    const amt = parseFloat(row.totalAmount || 0);
 
     if (type === 'SALE' && status === 'SUCCESS') {
       sales++;
       salesTotal += amt;
+      // Sum shipping from items
+      for (const item of row.items || []) {
+        shipping += parseFloat(item.shipping || 0);
+      }
     } else if (type === 'SALE' && status !== 'SUCCESS') {
       declines++;
-    } else if (type === 'UPSALE' && status === 'SUCCESS') {
+    } else if ((type === 'UPSALE' || type === 'UPSELL') && status === 'SUCCESS') {
       upsells++;
       upsellTotal += amt;
     } else if (type === 'REFUND') {
-      refundAmt += amt;
+      refundAmt += Math.abs(amt);
     }
   }
 
-  const partials = leadData?.message?.data?.length || leadData?.data?.length || 0;
-  const total = partials + sales;
+  return { sales, declines, salesTotal, upsells, upsellTotal, refundAmt, shipping };
+}
+
+/**
+ * Build full metrics object from transactions + partial count
+ */
+function buildMetrics(txnMetrics, partials) {
+  const { sales, declines, salesTotal, upsells, upsellTotal, refundAmt, shipping } = txnMetrics;
+  const total = (partials || 0) + sales + declines;
   const convRate = total > 0 ? (sales / total * 100) : 0;
   const declineRate = (sales + declines) > 0 ? (declines / (sales + declines) * 100) : 0;
   const salesRate = total > 0 ? (sales / total * 100) : 0;
@@ -101,7 +101,7 @@ function buildMetrics(txnData, leadData) {
   const avgTicket = sales > 0 ? (salesTotal / sales) : 0;
 
   return {
-    partials,
+    partials: partials || 0,
     convRate,
     declines,
     declineRate,
@@ -111,9 +111,37 @@ function buildMetrics(txnData, leadData) {
     upsells,
     upsellTotal,
     refundAmt,
+    shipping,
     netRevenue,
     avgTicket,
   };
+}
+
+/**
+ * Fetch partials count for a campaign + optional UTM filters
+ * COC uses /order/query/ with orderType=NEW_SALE for partials (abandoned checkouts)
+ */
+async function fetchPartials(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
+  try {
+    const r = await axios.get(`${COC_BASE}/order/query/`, {
+      params: {
+        loginId,
+        password,
+        campaignId,
+        startDate: fmtDate(dateStart),
+        endDate: fmtDate(dateStop),
+        orderStatus: 'PARTIAL',
+        resultsPerPage: 1,
+        ...extraParams,
+      }
+    });
+    if (r.data?.result === 'SUCCESS') {
+      return r.data.message?.totalResults || 0;
+    }
+    return 0;
+  } catch (err) {
+    return 0;
+  }
 }
 
 /**
@@ -121,11 +149,12 @@ function buildMetrics(txnData, leadData) {
  */
 async function getCocCampaignTotals(loginId, password, campaignId, dateStart, dateStop) {
   try {
-    const [txn, leads] = await Promise.all([
-      getCocStats(loginId, password, campaignId, dateStart, dateStop),
-      getCocLeads(loginId, password, campaignId, dateStart, dateStop),
+    const [records, partials] = await Promise.all([
+      fetchAllTransactions(loginId, password, campaignId, dateStart, dateStop),
+      fetchPartials(loginId, password, campaignId, dateStart, dateStop),
     ]);
-    return buildMetrics(txn, leads);
+    const txnMetrics = aggregateTransactions(records);
+    return buildMetrics(txnMetrics, partials);
   } catch (err) {
     console.error('getCocCampaignTotals error:', err.message);
     return null;
@@ -133,23 +162,54 @@ async function getCocCampaignTotals(loginId, password, campaignId, dateStart, da
 }
 
 /**
- * Get COC data for each FB campaign name (as utm_campaign), then adsets and ads
+ * Get COC data per FB campaign name (utm_campaign), building hierarchy
+ * UTM field names in COC: UTMCampaign, UTMMedium, UTMContent
  */
 async function getCocHierarchy(loginId, password, campaignId, dateStart, dateStop, fbCampaignNames) {
   const results = {};
 
   for (const campaignName of fbCampaignNames) {
     try {
-      const [txn, leads] = await Promise.all([
-        getCocStats(loginId, password, campaignId, dateStart, dateStop, { utm_campaign: campaignName }),
-        getCocLeads(loginId, password, campaignId, dateStart, dateStop, { utm_campaign: campaignName }),
+      const utmParams = { UTMCampaign: campaignName };
+
+      const [records, partials] = await Promise.all([
+        fetchAllTransactions(loginId, password, campaignId, dateStart, dateStop, utmParams),
+        fetchPartials(loginId, password, campaignId, dateStart, dateStop, utmParams),
       ]);
 
+      // Group by UTMMedium (adset level)
+      const adsetMap = {};
+      for (const row of records) {
+        const adsetName = (row.UTMMedium || '').trim();
+        if (!adsetMap[adsetName]) adsetMap[adsetName] = [];
+        adsetMap[adsetName].push(row);
+      }
+
+      // Build adset hierarchy
+      const adsets = {};
+      for (const [adsetName, adsetRecords] of Object.entries(adsetMap)) {
+        // Group by UTMContent (ad level)
+        const adMap = {};
+        for (const row of adsetRecords) {
+          const adName = (row.UTMContent || '').trim();
+          if (!adMap[adName]) adMap[adName] = [];
+          adMap[adName].push(row);
+        }
+
+        const ads = {};
+        for (const [adName, adRecords] of Object.entries(adMap)) {
+          ads[adName] = buildMetrics(aggregateTransactions(adRecords), 0);
+        }
+
+        adsets[adsetName] = {
+          cocData: buildMetrics(aggregateTransactions(adsetRecords), 0),
+          ads,
+        };
+      }
+
       results[campaignName] = {
-        cocData: buildMetrics(txn, leads),
-        adsets: {}
-        // Note: adset/ad level breakdown requires separate calls per adset name
-        // Those names come from FB data - we'll do a second pass in the merger if needed
+        cocData: buildMetrics(aggregateTransactions(records), partials),
+        adsets,
       };
     } catch (err) {
       console.error(`getCocHierarchy error for "${campaignName}":`, err.message);
@@ -160,17 +220,4 @@ async function getCocHierarchy(loginId, password, campaignId, dateStart, dateSto
   return results;
 }
 
-/**
- * Raw debug - returns full API response for inspection
- */
-async function getCocRaw(loginId, password, endpoint, extraParams = {}) {
-  const params = { ...baseParams(loginId, password), ...extraParams };
-  try {
-    const r = await axios.get(`${COC_BASE}${endpoint}`, { params });
-    return { status: r.status, data: r.data };
-  } catch (err) {
-    return { status: err.response?.status, error: err.response?.data || err.message };
-  }
-}
-
-module.exports = { getCocHierarchy, getCocCampaignTotals, getCocRaw };
+module.exports = { getCocHierarchy, getCocCampaignTotals };
