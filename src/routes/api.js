@@ -140,13 +140,20 @@ router.get('/debug/revenue/:clientId', async (req, res) => {
     const orderSummary = orders.map(o => ({
       orderId: o.orderId,
       totalAmount: o.totalAmount,
+      baseShipping: o.baseShipping,
+      salesTax: o.salesTax,
+      combined: (parseFloat(o.totalAmount||0) + parseFloat(o.baseShipping||0) + parseFloat(o.salesTax||0)).toFixed(2),
       hasUpsell: o.hasUpsell,
       itemCount: Object.keys(o.items || {}).length,
     }));
     
+    const totalWithShippingTax = orders.reduce((sum, o) => 
+      sum + parseFloat(o.totalAmount||0) + parseFloat(o.baseShipping||0) + parseFloat(o.salesTax||0), 0);
+    
     res.json({ 
       totalOrders: orders.length,
       totalRevenue: totalRevenue.toFixed(2),
+      totalRevenueWithShippingTax: totalWithShippingTax.toFixed(2),
       nullAmountCount: nullAmounts,
       orders: orderSummary 
     });
