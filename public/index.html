@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Media Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --surface: #111418;
+    --surface2: #181c22;
+    --border: #1e2530;
+    --border2: #252d3a;
+    --accent: #00d4aa;
+    --accent2: #0099ff;
+    --warn: #ff6b35;
+    --text: #e2e8f0;
+    --text2: #8899aa;
+    --text3: #4a5568;
+    --good: #00d4aa;
+    --bad: #ff4757;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .logo span { color: var(--text2); font-weight: 400; }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    flex-wrap: wrap;
+  }
+
+  select, input[type="date"] {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+  }
+  select:focus, input[type="date"]:focus {
+    border-color: var(--accent);
+  }
+  select option { background: #1a1f2e; }
+
+  .btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border2);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); opacity: 1; }
+
+  /* DATE PRESETS */
+  .date-presets {
+    display: flex;
+    gap: 4px;
+  }
+  .preset-btn {
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover, .preset-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0, 212, 170, 0.08);
+  }
+
+  /* MAIN */
+  .main { padding: 20px 24px; }
+
+  /* SUMMARY CARDS */
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .card-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .card-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .card-value.good { color: var(--good); }
+  .card-value.warn { color: var(--warn); }
+  .card-sub {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 2px;
+  }
+
+  /* STATUS BAR */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text3);
+  }
+  .status-dot.loading {
+    background: var(--accent2);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .status-dot.ok { background: var(--good); }
+  .status-dot.error { background: var(--bad); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* TABLE CONTAINER */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: auto;
+  }
+
+  /* TREE TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1200px;
+  }
+
+  thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--surface2);
+  }
+
+  th {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 10px 12px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  th:first-child { text-align: left; position: sticky; left: 0; background: var(--surface2); z-index: 11; }
+
+  /* COLUMN GROUPS */
+  .col-group-header {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 5px 12px 5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .col-group-fb { color: var(--accent2); }
+  .col-group-coc { color: var(--warn); }
+  .col-group-derived { color: var(--accent); }
+
+  /* ROWS */
+  tr.data-row {
+    border-bottom: 1px solid rgba(30, 37, 48, 0.6);
+    transition: background 0.1s;
+  }
+  tr.data-row:hover { background: rgba(255,255,255,0.02); }
+  tr.data-row:last-child { border-bottom: none; }
+
+  td {
+    padding: 8px 12px;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  td:first-child {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    z-index: 5;
+  }
+  tr.data-row:hover td:first-child { background: #131820; }
+
+  /* TREE LEVELS */
+  .row-level-0 td:first-child { padding-left: 12px; }
+  .row-level-1 td:first-child { padding-left: 28px; }
+  .row-level-2 td:first-child { padding-left: 46px; }
+  .row-level-3 td:first-child { padding-left: 64px; }
+
+  /* Level styling */
+  .row-level-0 {
+    background: rgba(0, 212, 170, 0.04);
+  }
+  .row-level-0 td {
+    font-weight: 600;
+    border-top: 1px solid rgba(0, 212, 170, 0.15);
+  }
+  .row-level-1 td { color: var(--text); }
+  .row-level-2 td { color: var(--text2); }
+  .row-level-3 td { color: var(--text3); font-size: 11px; }
+
+  /* TOGGLE BUTTON */
+  .toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text3);
+    font-size: 10px;
+    padding: 0 4px 0 0;
+    line-height: 1;
+    transition: color 0.15s, transform 0.15s;
+    display: inline-block;
+    width: 14px;
+  }
+  .toggle-btn:hover { color: var(--accent); }
+  .toggle-btn.collapsed { transform: rotate(-90deg); }
+
+  .row-name {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .level-tag {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .tag-account { background: rgba(0, 212, 170, 0.12); color: var(--accent); }
+  .tag-campaign { background: rgba(0, 153, 255, 0.12); color: var(--accent2); }
+  .tag-adset { background: rgba(255, 107, 53, 0.12); color: var(--warn); }
+  .tag-ad { background: rgba(255,255,255,0.05); color: var(--text3); }
+
+  /* VALUE COLORING */
+  .val-roas { color: var(--text); }
+  .val-roas.good { color: var(--good); }
+  .val-roas.bad { color: var(--bad); }
+  td.empty { color: var(--text3); }
+
+  /* LOADING SKELETON */
+  .skeleton { 
+    animation: shimmer 1.5s infinite;
+    background: linear-gradient(90deg, var(--surface2) 25%, #1e2530 50%, var(--surface2) 75%);
+    background-size: 200% 100%;
+    border-radius: 3px;
+    height: 12px;
+    display: inline-block;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  /* ERROR STATE */
+  .error-row td {
+    color: var(--bad);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 60px 24px;
+    color: var(--text3);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .empty-state .big { font-size: 32px; margin-bottom: 12px; }
+
+  /* EXPAND/COLLAPSE ALL */
+  .table-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .table-actions span {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">MEDIA<span>/</span>DASH</div>
+
+  <div class="header-controls">
+    <select id="clientSelect">
+      <option value="">Loading clients...</option>
+    </select>
+
+    <div class="date-presets">
+      <button class="preset-btn" data-preset="today">Today</button>
+      <button class="preset-btn active" data-preset="yesterday">Yesterday</button>
+      <button class="preset-btn" data-preset="7d">7D</button>
+      <button class="preset-btn" data-preset="14d">14D</button>
+      <button class="preset-btn" data-preset="30d">30D</button>
+      <button class="preset-btn" data-preset="mtd">MTD</button>
+    </div>
+
+    <input type="date" id="startDate" />
+    <input type="date" id="endDate" />
+
+    <button class="btn" id="loadBtn">RUN</button>
+  </div>
+</header>
+
+<main class="main">
+  <div class="summary-cards" id="summaryCards" style="display:none"></div>
+
+  <div class="status-bar" id="statusBar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Select a client and date range, then click RUN</span>
+  </div>
+
+  <div class="table-actions" id="tableActions" style="display:none">
+    <span>Expand:</span>
+    <button class="btn-secondary preset-btn" id="expandAll">All</button>
+    <button class="btn-secondary preset-btn" id="collapseAll">None</button>
+  </div>
+
+  <div class="table-wrap" id="tableWrap">
+    <div class="empty-state">
+      <div class="big">⬡</div>
+      <div>No data loaded yet</div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let currentData = null;
+const collapsed = new Set(); // track collapsed row keys
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  setDateToYesterday();
+  await loadClients();
+  setupListeners();
+}
+
+function setDateToYesterday() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const y = fmt(yesterday);
+  document.getElementById('startDate').value = y;
+  document.getElementById('endDate').value = y;
+}
+
+function fmt(d) {
+  return d.toISOString().split('T')[0];
+}
+
+async function loadClients() {
+  try {
+    const res = await fetch('/api/clients');
+    const { clients } = await res.json();
+    const sel = document.getElementById('clientSelect');
+    sel.innerHTML = clients.length
+      ? clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
+      : '<option value="">No clients configured</option>';
+  } catch (e) {
+    document.getElementById('clientSelect').innerHTML = '<option value="">Error loading clients</option>';
+  }
+}
+
+function setupListeners() {
+  document.getElementById('loadBtn').addEventListener('click', loadDashboard);
+
+  document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.preset-btn[data-preset]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyPreset(btn.dataset.preset);
+    });
+  });
+
+  document.getElementById('expandAll')?.addEventListener('click', () => {
+    collapsed.clear();
+    renderTable(currentData);
+  });
+
+  document.getElementById('collapseAll')?.addEventListener('click', () => {
+    if (!currentData) return;
+    currentData.adAccounts.forEach(acct => {
+      collapsed.add(`acct-${acct.fbAdAccountId}`);
+      acct.campaigns?.forEach(camp => {
+        collapsed.add(`camp-${acct.fbAdAccountId}-${camp.name}`);
+        camp.adsets?.forEach(adset => {
+          collapsed.add(`adset-${acct.fbAdAccountId}-${camp.name}-${adset.name}`);
+        });
+      });
+    });
+    renderTable(currentData);
+  });
+}
+
+function applyPreset(preset) {
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  let start, end;
+
+  switch (preset) {
+    case 'today':    start = end = fmt(today); break;
+    case 'yesterday': start = end = fmt(yesterday); break;
+    case '7d':
+      start = fmt(new Date(today.getTime() - 6*864e5));
+      end = fmt(today); break;
+    case '14d':
+      start = fmt(new Date(today.getTime() - 13*864e5));
+      end = fmt(today); break;
+    case '30d':
+      start = fmt(new Date(today.getTime() - 29*864e5));
+      end = fmt(today); break;
+    case 'mtd':
+      start = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+      end = fmt(today); break;
+  }
+
+  if (start) document.getElementById('startDate').value = start;
+  if (end) document.getElementById('endDate').value = end;
+}
+
+// ============================================================
+// LOAD DATA
+// ============================================================
+async function loadDashboard() {
+  const clientId = document.getElementById('clientSelect').value;
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+
+  if (!clientId || !startDate || !endDate) {
+    setStatus('error', 'Please select a client and date range');
+    return;
+  }
+
+  setStatus('loading', `Fetching FB + COC data for ${startDate} → ${endDate}...`);
+  document.getElementById('loadBtn').disabled = true;
+  showLoadingSkeleton();
+
+  try {
+    const res = await fetch(`/api/dashboard/${clientId}?startDate=${startDate}&endDate=${endDate}`);
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    currentData = data;
+
+    if (data.errors?.length) {
+      setStatus('error', `Loaded with ${data.errors.length} error(s): ${data.errors.map(e => e.error).join(', ')}`);
+    } else {
+      setStatus('ok', `Loaded ${data.adAccounts.length} ad account(s) · ${startDate} → ${endDate}`);
+    }
+
+    renderSummaryCards(data);
+    renderTable(data);
+    document.getElementById('tableActions').style.display = 'flex';
+  } catch (e) {
+    setStatus('error', `Failed to load: ${e.message}`);
+    showError(e.message);
+  } finally {
+    document.getElementById('loadBtn').disabled = false;
+  }
+}
+
+// ============================================================
+// STATUS
+// ============================================================
+function setStatus(state, msg) {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  dot.className = 'status-dot ' + state;
+  text.textContent = msg;
+}
+
+// ============================================================
+// SUMMARY CARDS
+// ============================================================
+function renderSummaryCards(data) {
+  const container = document.getElementById('summaryCards');
+  container.style.display = 'grid';
+
+  let totalSpend = 0, totalSales = 0, totalRevenue = 0, totalPartials = 0;
+
+  for (const acct of data.adAccounts) {
+    totalSpend += acct.fbSpend || 0;
+    const coc = acct.cocTotals;
+    if (coc) {
+      totalSales += coc.sales || 0;
+      totalRevenue += coc.salesTotal || 0;
+      totalPartials += coc.partials || 0;
+    }
+  }
+
+  const roas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
+  const cpp = totalSales > 0 ? totalSpend / totalSales : 0;
+  const aov = totalSales > 0 ? totalRevenue / totalSales : 0;
+  const conv = (totalPartials + totalSales) > 0 ? (totalSales / (totalPartials + totalSales) * 100) : 0;
+
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-label">FB Spend</div>
+      <div class="card-value">${fmtCurrency(totalSpend)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Revenue</div>
+      <div class="card-value">${fmtCurrency(totalRevenue)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">ROAS</div>
+      <div class="card-value ${roas >= 1 ? 'good' : 'warn'}">${roas.toFixed(2)}x</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Sales</div>
+      <div class="card-value">${totalSales.toLocaleString()}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">CPP</div>
+      <div class="card-value">${fmtCurrency(cpp)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">AOV</div>
+      <div class="card-value">${fmtCurrency(aov)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Conv Rate</div>
+      <div class="card-value">${conv.toFixed(1)}%</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Partials</div>
+      <div class="card-value">${totalPartials.toLocaleString()}</div>
+    </div>
+  `;
+}
+
+// ============================================================
+// TABLE RENDER
+// ============================================================
+function renderTable(data) {
+  if (!data || !data.adAccounts?.length) {
+    document.getElementById('tableWrap').innerHTML = '<div class="empty-state"><div class="big">⬡</div><div>No data returned</div></div>';
+    return;
+  }
+
+  const rows = [];
+  buildRows(data, rows);
+
+  const html = `
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="text-align:left; min-width:240px">Name</th>
+          <th class="col-group-header col-group-fb" colspan="1" style="text-align:center">FB</th>
+          <th class="col-group-header col-group-coc" colspan="8" style="text-align:center">CHECKOUT CHAMP</th>
+          <th class="col-group-header col-group-derived" colspan="4" style="text-align:center">DERIVED</th>
+        </tr>
+        <tr>
+          <th>Spend</th>
+          <th>Partials</th>
+          <th>Conv%</th>
+          <th>Declines</th>
+          <th>Dec%</th>
+          <th>Sales</th>
+          <th>Sales%</th>
+          <th>Revenue</th>
+          <th>Net Rev</th>
+          <th>Avg Ticket</th>
+          <th>ROAS</th>
+          <th>CPP</th>
+          <th>AOV</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        ${rows.join('')}
+      </tbody>
+    </table>
+  `;
+
+  document.getElementById('tableWrap').innerHTML = html;
+
+  // Attach toggle listeners
+  document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.key;
+      if (collapsed.has(key)) {
+        collapsed.delete(key);
+      } else {
+        collapsed.add(key);
+      }
+      renderTable(currentData);
+    });
+  });
+}
+
+function buildRows(data, rows) {
+  for (const acct of data.adAccounts) {
+    const acctKey = `acct-${acct.fbAdAccountId}`;
+    const acctCollapsed = collapsed.has(acctKey);
+    const coc = acct.cocTotals || {};
+    const acctRoas = acct.fbSpend > 0 && coc.salesTotal ? coc.salesTotal / acct.fbSpend : 0;
+
+    rows.push(buildRow({
+      key: acctKey,
+      level: 0,
+      tag: 'ACCOUNT',
+      tagClass: 'tag-account',
+      name: `${acct.cocCampaignName}`,
+      subname: acct.fbAdAccountId,
+      hasChildren: acct.campaigns?.length > 0,
+      isCollapsed: acctCollapsed,
+      fbSpend: acct.fbSpend,
+      coc,
+      roas: acctRoas,
+      cpp: coc.sales > 0 ? acct.fbSpend / coc.sales : 0,
+      aov: coc.sales > 0 ? coc.salesTotal / coc.sales : 0,
+    }));
+
+    if (acctCollapsed) continue;
+
+    for (const camp of acct.campaigns || []) {
+      const campKey = `camp-${acct.fbAdAccountId}-${camp.name}`;
+      const campCollapsed = collapsed.has(campKey);
+
+      rows.push(buildRow({
+        key: campKey,
+        level: 1,
+        tag: 'CAMPAIGN',
+        tagClass: 'tag-campaign',
+        name: camp.name,
+        hasChildren: camp.adsets?.length > 0,
+        isCollapsed: campCollapsed,
+        fbSpend: camp.fbSpend,
+        coc: camp.cocData || {},
+        roas: camp.roas,
+        cpp: camp.cpp,
+        aov: camp.aov,
+      }));
+
+      if (campCollapsed) continue;
+
+      for (const adset of camp.adsets || []) {
+        const adsetKey = `adset-${acct.fbAdAccountId}-${camp.name}-${adset.name}`;
+        const adsetCollapsed = collapsed.has(adsetKey);
+
+        rows.push(buildRow({
+          key: adsetKey,
+          level: 2,
+          tag: 'ADSET',
+          tagClass: 'tag-adset',
+          name: adset.name,
+          hasChildren: adset.ads?.length > 0,
+          isCollapsed: adsetCollapsed,
+          fbSpend: adset.fbSpend,
+          coc: adset.cocData || {},
+          roas: adset.roas,
+          cpp: adset.cpp,
+          aov: adset.aov,
+        }));
+
+        if (adsetCollapsed) continue;
+
+        for (const ad of adset.ads || []) {
+          rows.push(buildRow({
+            key: `ad-${acct.fbAdAccountId}-${camp.name}-${adset.name}-${ad.name}`,
+            level: 3,
+            tag: 'AD',
+            tagClass: 'tag-ad',
+            name: ad.name,
+            hasChildren: false,
+            isCollapsed: false,
+            fbSpend: ad.fbSpend,
+            coc: ad.cocData || {},
+            roas: ad.roas,
+            cpp: ad.cpp,
+            aov: ad.aov,
+          }));
+        }
+      }
+    }
+  }
+}
+
+function buildRow({ key, level, tag, tagClass, name, subname, hasChildren, isCollapsed, fbSpend, coc, roas, cpp, aov }) {
+  const toggleHtml = hasChildren
+    ? `<button class="toggle-btn ${isCollapsed ? 'collapsed' : ''}" data-key="${key}">▾</button>`
+    : `<span style="display:inline-block;width:14px"></span>`;
+
+  const roasClass = roas > 0 ? (roas >= 1.5 ? 'good' : roas >= 1 ? '' : 'bad') : '';
+
+  const cell = (v, cls='') => v != null && v !== 0 && v !== '' && v !== '---'
+    ? `<td class="${cls}">${v}</td>`
+    : `<td class="empty">—</td>`;
+
+  return `
+    <tr class="data-row row-level-${level}" data-key="${key}">
+      <td>
+        <div class="row-name">
+          ${toggleHtml}
+          <span class="level-tag ${tagClass}">${tag}</span>
+          <span title="${name}">${truncate(name, level === 3 ? 30 : 40)}</span>
+          ${subname ? `<span style="color:var(--text3);font-size:10px;margin-left:6px">${subname}</span>` : ''}
+        </div>
+      </td>
+      ${cell(fmtCurrency(fbSpend))}
+      ${cell(fmtNum(coc?.partials))}
+      ${cell(fmtPct(coc?.convRate))}
+      ${cell(fmtNum(coc?.declines))}
+      ${cell(fmtPct(coc?.declineRate))}
+      ${cell(fmtNum(coc?.sales))}
+      ${cell(fmtPct(coc?.salesRate))}
+      ${cell(fmtCurrency(coc?.salesTotal))}
+      ${cell(fmtCurrency(coc?.netRevenue))}
+      ${cell(fmtCurrency(coc?.avgTicket))}
+      <td class="val-roas ${roasClass}">${roas > 0 ? roas.toFixed(2) + 'x' : '—'}</td>
+      ${cell(cpp > 0 ? fmtCurrency(cpp) : null)}
+      ${cell(aov > 0 ? fmtCurrency(aov) : null)}
+    </tr>
+  `;
+}
+
+// ============================================================
+// LOADING / ERROR STATES
+// ============================================================
+function showLoadingSkeleton() {
+  const cols = 14;
+  const skeletonRow = (w) => `
+    <tr class="data-row">
+      <td><div class="skeleton" style="width:${w}%">&nbsp;</div></td>
+      ${Array(cols-1).fill('<td><div class="skeleton" style="width:60px">&nbsp;</div></td>').join('')}
+    </tr>
+  `;
+  document.getElementById('tableWrap').innerHTML = `
+    <table>
+      <tbody>${skeletonRow(40)}${skeletonRow(30)}${skeletonRow(25)}${skeletonRow(20)}${skeletonRow(30)}${skeletonRow(25)}</tbody>
+    </table>
+  `;
+}
+
+function showError(msg) {
+  document.getElementById('tableWrap').innerHTML = `
+    <div class="empty-state" style="color:var(--bad)">
+      <div class="big">✕</div>
+      <div>${msg}</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--text3)">Check your environment variables and API credentials</div>
+    </div>
+  `;
+}
+
+// ============================================================
+// FORMATTERS
+// ============================================================
+function fmtCurrency(v) {
+  if (v == null || v === 0) return null;
+  return '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtNum(v) {
+  if (v == null || v === 0) return null;
+  return parseInt(v).toLocaleString();
+}
+function fmtPct(v) {
+  if (v == null || v === 0) return null;
+  return parseFloat(v).toFixed(1) + '%';
+}
+function truncate(str, max) {
+  if (!str) return '';
+  return str.length > max ? str.slice(0, max) + '…' : str;
+}
+
+// ============================================================
+// START
+// ============================================================
+init();
+</script>
+</body>
+</html>
