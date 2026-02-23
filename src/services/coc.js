@@ -7,9 +7,6 @@ function fmtDate(d) {
   return `${parseInt(m)}/${parseInt(day)}/${y.slice(2)}`;
 }
 
-/**
- * Fetch ALL pages from an endpoint
- */
 async function fetchAllPages(url, params) {
   let page = 1;
   let allRecords = [];
@@ -39,33 +36,44 @@ async function fetchAllPages(url, params) {
 }
 
 /**
- * Fetch all transactions - filter client-side for NEW_SALE + billingCycle 1
- * The API ignores orderType filter so we must filter after fetching
+ * Fetch COMPLETE orders (these are the "Sales" in COC dashboard)
+ * Uses order/query with orderStatus=COMPLETE + orderType=NEW_SALE
  */
-async function fetchNewSaleTransactions(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
+async function fetchCompleteOrders(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
   const params = {
     loginId,
     password,
     campaignId,
     startDate: fmtDate(dateStart),
     endDate: fmtDate(dateStop),
-    txnType: 'SALE',
-    responseType: 'SUCCESS',
+    orderStatus: 'COMPLETE',
+    orderType: 'NEW_SALE',
     resultsPerPage: 200,
     ...extraParams,
   };
-
-  const allRecords = await fetchAllPages(`${COC_BASE}/transactions/query/`, params);
-
-  // Filter client-side: only NEW_SALE, billingCycleNumber === 1
-  return allRecords.filter(row =>
-    row.orderType === 'NEW_SALE' &&
-    parseInt(row.billingCycleNumber) === 1
-  );
+  return fetchAllPages(`${COC_BASE}/order/query/`, params);
 }
 
 /**
- * Fetch declined transactions (NEW_SALE only, billingCycle 1)
+ * Fetch PARTIAL orders
+ */
+async function fetchPartialOrders(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
+  const params = {
+    loginId,
+    password,
+    campaignId,
+    startDate: fmtDate(dateStart),
+    endDate: fmtDate(dateStop),
+    orderStatus: 'PARTIAL',
+    orderType: 'NEW_SALE',
+    resultsPerPage: 200,
+    ...extraParams,
+  };
+  return fetchAllPages(`${COC_BASE}/order/query/`, params);
+}
+
+/**
+ * Fetch declined transactions (billingCycle 1 NEW_SALE only)
  */
 async function fetchDeclinedTransactions(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
   const params = {
@@ -82,56 +90,35 @@ async function fetchDeclinedTransactions(loginId, password, campaignId, dateStar
 
   const allRecords = await fetchAllPages(`${COC_BASE}/transactions/query/`, params);
 
-  return allRecords.filter(row =>
-    row.orderType === 'NEW_SALE' &&
-    parseInt(row.billingCycleNumber) === 1
-  );
-}
-
-/**
- * Fetch partials count using order/query with orderStatus=PARTIAL + orderType=NEW_SALE
- */
-async function fetchPartialsCount(loginId, password, campaignId, dateStart, dateStop, extraParams = {}) {
-  try {
-    const r = await axios.get(`${COC_BASE}/order/query/`, {
-      params: {
-        loginId,
-        password,
-        campaignId,
-        startDate: fmtDate(dateStart),
-        endDate: fmtDate(dateStop),
-        orderStatus: 'PARTIAL',
-        orderType: 'NEW_SALE',
-        resultsPerPage: 1,
-        ...extraParams,
-      }
-    });
-    if (r.data?.result === 'SUCCESS') {
-      return r.data.message?.totalResults || 0;
-    }
-    return 0;
-  } catch (err) {
-    return 0;
+  // Filter to cycle-1 only, deduplicate by orderId
+  const cycle1 = allRecords.filter(row => parseInt(row.billingCycleNumber) === 1);
+  const orderMap = new Map();
+  for (const row of cycle1) {
+    const key = row.orderId || row.actualOrderId;
+    if (!orderMap.has(key)) orderMap.set(key, row);
   }
+  return Array.from(orderMap.values());
 }
 
 /**
- * Build metrics from sales records + declines count + partials count
+ * Build metrics from complete orders + declines + partials
+ * Revenue comes from order.totalAmount on COMPLETE orders
  */
-function buildMetrics(salesRecords, declinesCount, partials) {
-  let sales = salesRecords.length;
+function buildMetrics(completeOrders, declinesCount, partials) {
+  const sales = completeOrders.length;
   let salesTotal = 0;
   let upsells = 0;
   let upsellTotal = 0;
-  let refundAmt = 0;
   let shipping = 0;
+  const refundAmt = 0;
 
-  for (const row of salesRecords) {
-    const amt = parseFloat(row.totalAmount || 0);
-    salesTotal += amt;
+  for (const order of completeOrders) {
+    const orderAmt = parseFloat(order.totalAmount || 0);
+    salesTotal += orderAmt;
 
     // Check items for upsells
-    for (const item of row.items || []) {
+    const items = order.items || {};
+    for (const item of Object.values(items)) {
       shipping += parseFloat(item.shipping || 0);
       if (item.productType === 'UPSALE') {
         upsells++;
@@ -165,26 +152,20 @@ function buildMetrics(salesRecords, declinesCount, partials) {
   };
 }
 
-/**
- * Get overall COC totals for a campaign (no UTM filter)
- */
 async function getCocCampaignTotals(loginId, password, campaignId, dateStart, dateStop) {
   try {
-    const [sales, declines, partials] = await Promise.all([
-      fetchNewSaleTransactions(loginId, password, campaignId, dateStart, dateStop),
+    const [complete, declines, partials] = await Promise.all([
+      fetchCompleteOrders(loginId, password, campaignId, dateStart, dateStop),
       fetchDeclinedTransactions(loginId, password, campaignId, dateStart, dateStop),
-      fetchPartialsCount(loginId, password, campaignId, dateStart, dateStop),
+      fetchPartialOrders(loginId, password, campaignId, dateStart, dateStop),
     ]);
-    return buildMetrics(sales, declines.length, partials);
+    return buildMetrics(complete, declines.length, partials.length);
   } catch (err) {
     console.error('getCocCampaignTotals error:', err.message);
     return null;
   }
 }
 
-/**
- * Get COC hierarchy per FB campaign (utm_campaign), building adset/ad breakdown
- */
 async function getCocHierarchy(loginId, password, campaignId, dateStart, dateStop, fbCampaignNames) {
   const results = {};
 
@@ -192,50 +173,56 @@ async function getCocHierarchy(loginId, password, campaignId, dateStart, dateSto
     try {
       const utmParams = { UTMCampaign: campaignName };
 
-      const [sales, declines, partials] = await Promise.all([
-        fetchNewSaleTransactions(loginId, password, campaignId, dateStart, dateStop, utmParams),
+      const [complete, declines, partials] = await Promise.all([
+        fetchCompleteOrders(loginId, password, campaignId, dateStart, dateStop, utmParams),
         fetchDeclinedTransactions(loginId, password, campaignId, dateStart, dateStop, utmParams),
-        fetchPartialsCount(loginId, password, campaignId, dateStart, dateStop, utmParams),
+        fetchPartialOrders(loginId, password, campaignId, dateStart, dateStop, utmParams),
       ]);
 
       // Group by UTMMedium (adset), then UTMContent (ad)
       const adsetMap = {};
-      for (const row of [...sales, ...declines]) {
-        const adsetName = (row.UTMMedium || '').trim();
-        if (!adsetMap[adsetName]) adsetMap[adsetName] = { sales: [], declines: [] };
-        if (row.responseType === 'SUCCESS') {
-          adsetMap[adsetName].sales.push(row);
-        } else {
-          adsetMap[adsetName].declines.push(row);
+
+      const groupIntoAdsets = (orders, type) => {
+        for (const row of orders) {
+          const adsetName = (row.UTMMedium || '').trim();
+          if (!adsetMap[adsetName]) adsetMap[adsetName] = { complete: [], declines: [], partials: [] };
+          adsetMap[adsetName][type].push(row);
         }
-      }
+      };
+
+      groupIntoAdsets(complete, 'complete');
+      groupIntoAdsets(declines, 'declines');
+      groupIntoAdsets(partials, 'partials');
 
       const adsets = {};
       for (const [adsetName, adsetData] of Object.entries(adsetMap)) {
         const adMap = {};
-        for (const row of [...adsetData.sales, ...adsetData.declines]) {
-          const adName = (row.UTMContent || '').trim();
-          if (!adMap[adName]) adMap[adName] = { sales: [], declines: [] };
-          if (row.responseType === 'SUCCESS') {
-            adMap[adName].sales.push(row);
-          } else {
-            adMap[adName].declines.push(row);
+
+        const groupIntoAds = (orders, type) => {
+          for (const row of orders) {
+            const adName = (row.UTMContent || '').trim();
+            if (!adMap[adName]) adMap[adName] = { complete: [], declines: [], partials: [] };
+            adMap[adName][type].push(row);
           }
-        }
+        };
+
+        groupIntoAds(adsetData.complete, 'complete');
+        groupIntoAds(adsetData.declines, 'declines');
+        groupIntoAds(adsetData.partials, 'partials');
 
         const ads = {};
         for (const [adName, adData] of Object.entries(adMap)) {
-          ads[adName] = buildMetrics(adData.sales, adData.declines.length, 0);
+          ads[adName] = buildMetrics(adData.complete, adData.declines.length, adData.partials.length);
         }
 
         adsets[adsetName] = {
-          cocData: buildMetrics(adsetData.sales, adsetData.declines.length, 0),
+          cocData: buildMetrics(adsetData.complete, adsetData.declines.length, adsetData.partials.length),
           ads,
         };
       }
 
       results[campaignName] = {
-        cocData: buildMetrics(sales, declines.length, partials),
+        cocData: buildMetrics(complete, declines.length, partials.length),
         adsets,
       };
     } catch (err) {
