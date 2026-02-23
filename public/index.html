@@ -550,6 +550,9 @@ function fmt(d) {
   return d.toISOString().split('T')[0];
 }
 
+// Store cppTargets per adAccountId: { "act_XXX": 20, "act_YYY": 15 }
+let cppTargets = {};
+
 async function loadClients() {
   try {
     const res = await fetch('/api/clients');
@@ -558,6 +561,13 @@ async function loadClients() {
     sel.innerHTML = clients.length
       ? clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
       : '<option value="">No clients configured</option>';
+    // Build cppTargets lookup
+    cppTargets = {};
+    for (const c of clients) {
+      for (const a of c.adAccounts || []) {
+        if (a.cppTarget) cppTargets[a.fbAdAccountId] = parseFloat(a.cppTarget);
+      }
+    }
   } catch (e) {
     document.getElementById('clientSelect').innerHTML = '<option value="">Error loading clients</option>';
   }
@@ -603,17 +613,17 @@ function applyPreset(preset) {
     case 'today':    start = end = fmt(today); break;
     case 'yesterday': start = end = fmt(yesterday); break;
     case '7d':
-      start = fmt(new Date(today.getTime() - 6*864e5));
-      end = fmt(today); break;
+      start = fmt(new Date(yesterday.getTime() - 6*864e5));
+      end = fmt(yesterday); break;
     case '14d':
-      start = fmt(new Date(today.getTime() - 13*864e5));
-      end = fmt(today); break;
+      start = fmt(new Date(yesterday.getTime() - 13*864e5));
+      end = fmt(yesterday); break;
     case '30d':
-      start = fmt(new Date(today.getTime() - 29*864e5));
-      end = fmt(today); break;
+      start = fmt(new Date(yesterday.getTime() - 29*864e5));
+      end = fmt(yesterday); break;
     case 'mtd':
       start = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
-      end = fmt(today); break;
+      end = fmt(yesterday); break;
   }
 
   if (start) document.getElementById('startDate').value = start;
@@ -623,8 +633,9 @@ function applyPreset(preset) {
 // ============================================================
 // LOAD DATA
 // ============================================================
-// Global insights data for inline badges
+// Global prior period + insights data
 let insightsData = null;
+let priorData = null;
 
 async function loadDashboard() {
   const clientId = document.getElementById('clientSelect').value;
@@ -643,33 +654,30 @@ async function loadDashboard() {
   showLoadingSkeleton();
 
   try {
-    // Fetch dashboard + insights in parallel
-    // Insights uses endDate as "yesterday" for CPP trend (only meaningful for single-day or recent ranges)
-    const [res, insRes] = await Promise.all([
+    // Fetch current period + prior period in parallel
+    const [res, priorRes] = await Promise.all([
       fetch(`/api/dashboard/${clientId}?startDate=${startDate}&endDate=${endDate}`),
-      fetch(`/api/insights/${clientId}?date=${endDate}`).catch(() => null)
+      fetch(`/api/prior/${clientId}?startDate=${startDate}&endDate=${endDate}`).catch(() => null)
     ]);
 
     if (!res.ok) throw new Error(`Server error: ${res.status}`);
     const data = await res.json();
     currentData = data;
 
+    // Store prior period data globally for delta calculations
+    priorData = (priorRes?.ok) ? await priorRes.json() : null;
+
     if (data.errors?.length) {
       setStatus('error', `Loaded with ${data.errors.length} error(s): ${data.errors.map(e => e.error).join(', ')}`);
     } else {
-      setStatus('ok', `Loaded ${data.adAccounts.length} ad account(s) · ${startDate} → ${endDate}`);
-    }
-
-    // Load insights if available
-    if (insRes?.ok) {
-      insightsData = await insRes.json();
+      const priorLabel = priorData ? ` · vs ${priorData.startDate} → ${priorData.endDate}` : '';
+      setStatus('ok', `Loaded ${data.adAccounts.length} ad account(s) · ${startDate} → ${endDate}${priorLabel}`);
     }
 
     renderSummaryCards(data);
     renderTable(data);
+    renderAlerts(data);
     document.getElementById('tableActions').style.display = 'flex';
-
-    if (insightsData) renderAlerts(insightsData);
   } catch (e) {
     setStatus('error', `Failed to load: ${e.message}`);
     showError(e.message);
@@ -767,7 +775,7 @@ function renderTable(data) {
           <th rowspan="2" style="text-align:left; min-width:240px">Name</th>
           <th class="col-group-header col-group-fb" colspan="1" style="text-align:center">FB</th>
           <th class="col-group-header col-group-coc" colspan="8" style="text-align:center">CHECKOUT CHAMP</th>
-          <th class="col-group-header col-group-derived" colspan="4" style="text-align:center">DERIVED</th>
+          <th class="col-group-header col-group-derived" colspan="5" style="text-align:center">DERIVED</th>
         </tr>
         <tr>
           <th>Spend</th>
@@ -782,6 +790,7 @@ function renderTable(data) {
           <th>Avg Ticket</th>
           <th>ROAS</th>
           <th>CPP</th>
+          <th>Δ CPP</th>
           <th>AOV</th>
         </tr>
       </thead>
@@ -829,6 +838,7 @@ function buildRows(data, rows) {
       roas: acctRoas,
       cpp: coc.sales > 0 ? acct.fbSpend / coc.sales : 0,
       aov: coc.sales > 0 ? coc.salesTotal / coc.sales : 0,
+      adAccountId: acct.fbAdAccountId,
     }));
 
     if (acctCollapsed) continue;
@@ -871,6 +881,7 @@ function buildRows(data, rows) {
           roas: adset.roas,
           cpp: adset.cpp,
           aov: adset.aov,
+          adAccountId: acct.fbAdAccountId,
           campaignName: camp.name,
         }));
 
@@ -890,6 +901,7 @@ function buildRows(data, rows) {
             roas: ad.roas,
             cpp: ad.cpp,
             aov: ad.aov,
+            adAccountId: acct.fbAdAccountId,
             campaignName: camp.name,
             adsetName: adset.name,
           }));
@@ -899,7 +911,7 @@ function buildRows(data, rows) {
   }
 }
 
-function buildRow({ key, level, tag, tagClass, name, subname, hasChildren, isCollapsed, fbSpend, coc, roas, cpp, aov, campaignName='', adsetName='' }) {
+function buildRow({ key, level, tag, tagClass, name, subname, hasChildren, isCollapsed, fbSpend, coc, roas, cpp, aov, campaignName='', adsetName='', adAccountId='' }) {
   const toggleHtml = hasChildren
     ? `<button class="toggle-btn ${isCollapsed ? 'collapsed' : ''}" data-key="${key}">▾</button>`
     : `<span style="display:inline-block;width:14px"></span>`;
@@ -931,10 +943,22 @@ function buildRow({ key, level, tag, tagClass, name, subname, hasChildren, isCol
       ${cell(fmtCurrency(coc?.netRevenue))}
       ${cell(fmtCurrency(coc?.avgTicket))}
       <td class="val-roas ${roasClass}">${roas > 0 ? roas.toFixed(2) + 'x' : '—'}</td>
-      <td class="">${(() => {
-        if (!cpp || cpp === 0) return '—';
-        const badge = (level === 2 || level === 3) ? getInsightsBadge(level === 2 ? 'adset' : 'ad', campaignName, adsetName, name) : '';
-        return fmtCurrency(cpp) + badge;
+      <td>${(() => {
+        if (!cpp || cpp === 0) return '<span style="color:var(--text3)">—</span>';
+        const target = cppTargets[adAccountId] || null;
+        let cls = '';
+        if (target) cls = cpp <= target ? 'style="color:var(--good)"' : 'style="color:var(--bad)"';
+        return `<span ${cls}>${fmtCurrency(cpp)}</span>`;
+      })()}</td>
+      <td>${(() => {
+        if (!cpp || cpp === 0) return '<span style="color:var(--text3)">—</span>';
+        const priorCpp = getPriorCpp(adAccountId, campaignName, adsetName, level === 3 ? name : null);
+        if (priorCpp === null) return '<span style="color:var(--text3)">—</span>';
+        const delta = cpp - priorCpp;
+        const pct = Math.round((delta / priorCpp) * 100);
+        const sign = delta > 0 ? '+' : '';
+        const cls = delta > 0 ? 'color:var(--bad)' : 'color:var(--good)';
+        return `<span style="${cls}">${sign}${fmtCurrency(Math.abs(delta))} (${sign}${pct}%)</span>`;
       })()}</td>
       ${cell(aov > 0 ? fmtCurrency(aov) : null)}
     </tr>
@@ -942,55 +966,90 @@ function buildRow({ key, level, tag, tagClass, name, subname, hasChildren, isCol
 }
 
 // ============================================================
-// ALERTS PANEL
+// ALERTS PANEL — shows adsets/ads above their CPP target
 // ============================================================
-function renderAlerts(insights) {
+function renderAlerts(data) {
   const panel = document.getElementById('alertsPanel');
   const grid = document.getElementById('alertsGrid');
   const subtitle = document.getElementById('alertsSubtitle');
 
-  const allFlagged = insights.accounts.flatMap(a => a.flagged);
-  if (!allFlagged.length) {
-    panel.style.display = 'none';
-    return;
+  // Only show if we have cppTargets configured
+  if (!Object.keys(cppTargets).length) { panel.style.display = 'none'; return; }
+
+  const flagged = [];
+
+  for (const acct of data.adAccounts || []) {
+    const target = cppTargets[acct.fbAdAccountId];
+    if (!target) continue;
+
+    for (const camp of acct.campaigns || []) {
+      for (const adset of camp.adsets || []) {
+        const cpp = adset.cpp || 0;
+        const spend = adset.fbSpend || 0;
+        if (spend >= 25 && cpp > target) {
+          const priorCpp = getPriorCpp(acct.fbAdAccountId, camp.name, adset.name, null);
+          flagged.push({
+            level: 'adset', acctName: acct.cocCampaignName,
+            campaign: camp.name, name: adset.name,
+            cpp, target, spend, sales: adset.cocData?.sales || 0,
+            priorCpp, overTarget: cpp - target,
+          });
+        }
+        for (const ad of adset.ads || []) {
+          const adCpp = ad.cpp || 0;
+          const adSpend = ad.fbSpend || 0;
+          if (adSpend >= 25 && adCpp > target) {
+            const priorCpp = getPriorCpp(acct.fbAdAccountId, camp.name, adset.name, ad.name);
+            flagged.push({
+              level: 'ad', acctName: acct.cocCampaignName,
+              campaign: camp.name, adset: adset.name, name: ad.name,
+              cpp: adCpp, target, spend: adSpend, sales: ad.cocData?.sales || 0,
+              priorCpp, overTarget: adCpp - target,
+            });
+          }
+        }
+      }
+    }
   }
 
-  const accountAvgCpps = insights.accounts.map(a => a.accountAvgCpp).filter(v => v > 0);
-  const overallAvgCpp = accountAvgCpps.length ? (accountAvgCpps.reduce((a,b)=>a+b,0)/accountAvgCpps.length) : 0;
+  if (!flagged.length) { panel.style.display = 'none'; return; }
 
-  subtitle.textContent = `${allFlagged.length} item${allFlagged.length !== 1 ? 's' : ''} flagged · 7D avg CPP: ${fmtCurrency(overallAvgCpp)} · spend ≥$25 · delta ≥15%`;
+  // Sort worst offenders first
+  flagged.sort((a, b) => b.overTarget - a.overTarget);
 
-  grid.innerHTML = allFlagged.map(item => {
-    const cardClass = (item.isRising && item.isAboveAvg) ? 'both' : item.isRising ? 'rising' : 'above-avg';
-    const cppDeltaClass = (item.vsWeekPct || 0) > 30 ? 'bad' : 'warn';
-    const vsWeekStr = item.vsWeekPct !== null ? `+${item.vsWeekPct}% vs 7D` : 'No 7D data';
-    const vsAccountStr = item.vsAccountPct !== null ? `+${item.vsAccountPct}% vs avg` : '';
-    const flags = [item.isRising ? vsWeekStr : null, item.isAboveAvg ? vsAccountStr : null].filter(Boolean).join(' · ');
-    const parentStr = item.level === 'ad' ? `${item.adset} › ` : `${item.campaign} › `;
+  subtitle.textContent = `${flagged.length} item${flagged.length !== 1 ? 's' : ''} above CPP target · spend ≥$25`;
+
+  grid.innerHTML = flagged.map(item => {
+    const delta = item.priorCpp !== null ? item.cpp - item.priorCpp : null;
+    const deltaStr = delta !== null
+      ? `<span style="color:${delta > 0 ? 'var(--bad)' : 'var(--good)'}">
+          ${delta > 0 ? '▲' : '▼'} ${delta > 0 ? '+' : ''}${fmtCurrency(Math.abs(delta))} vs prior period
+         </span>`
+      : '';
 
     return `
-      <div class="alert-card ${cardClass}">
-        <div class="alert-level">${item.level === 'adset' ? '⬡ ADSET' : '● AD'} · ${item.campaign}</div>
+      <div class="alert-card both">
+        <div class="alert-level">${item.level === 'adset' ? '⬡ ADSET' : '● AD'} · ${item.acctName}</div>
         <div class="alert-name" title="${item.name}">${truncate(item.name, 36)}</div>
         <div class="alert-metrics">
           <div class="alert-metric">
-            <div class="alert-metric-label">Yesterday CPP</div>
-            <div class="alert-metric-value ${cppDeltaClass}">${fmtCurrency(item.yesterdayCpp)}</div>
+            <div class="alert-metric-label">CPP</div>
+            <div class="alert-metric-value bad">${fmtCurrency(item.cpp)}</div>
           </div>
           <div class="alert-metric">
-            <div class="alert-metric-label">7D Avg CPP</div>
-            <div class="alert-metric-value">${item.weekCpp > 0 ? fmtCurrency(item.weekCpp) : '—'}</div>
+            <div class="alert-metric-label">Target</div>
+            <div class="alert-metric-value">${fmtCurrency(item.target)}</div>
+          </div>
+          <div class="alert-metric">
+            <div class="alert-metric-label">Over By</div>
+            <div class="alert-metric-value bad">+${fmtCurrency(item.overTarget)}</div>
           </div>
           <div class="alert-metric">
             <div class="alert-metric-label">Spend</div>
-            <div class="alert-metric-value">${fmtCurrency(item.yesterdaySpend)}</div>
-          </div>
-          <div class="alert-metric">
-            <div class="alert-metric-label">Sales</div>
-            <div class="alert-metric-value">${item.sales || '—'}</div>
+            <div class="alert-metric-value">${fmtCurrency(item.spend)}</div>
           </div>
         </div>
-        <div style="margin-top:8px;font-size:10px;color:#f59e0b">${flags}</div>
+        ${deltaStr ? `<div style="margin-top:8px;font-size:10px">${deltaStr}</div>` : ''}
       </div>
     `;
   }).join('');
@@ -998,35 +1057,37 @@ function renderAlerts(insights) {
   panel.style.display = 'block';
 }
 
-// Build a lookup map from insights for inline CPP badges
-function getInsightsBadge(level, campaignName, adsetName, adName) {
-  if (!insightsData) return '';
-  for (const acct of insightsData.accounts) {
-    for (const item of acct.flagged) {
-      if (level === 'adset' && item.level === 'adset' && item.campaign === campaignName && item.name === adsetName) {
-        if (item.vsWeekPct !== null) {
-          const cls = item.vsWeekPct > 0 ? 'up' : 'down';
-          const sign = item.vsWeekPct > 0 ? '+' : '';
-          return `<span class="cpp-badge ${cls}">${sign}${item.vsWeekPct}%</span>`;
-        }
-      }
-      if (level === 'ad' && item.level === 'ad' && item.campaign === campaignName && item.adset === adsetName && item.name === adName) {
-        if (item.vsWeekPct !== null) {
-          const cls = item.vsWeekPct > 0 ? 'up' : 'down';
-          const sign = item.vsWeekPct > 0 ? '+' : '';
-          return `<span class="cpp-badge ${cls}">${sign}${item.vsWeekPct}%</span>`;
-        }
-      }
-    }
+// Get prior period CPP for a given row (account > campaign > adset > ad)
+function getPriorCpp(adAccountId, campaignName, adsetName, adName) {
+  if (!priorData) return null;
+  const acct = priorData.adAccounts?.find(a => a.fbAdAccountId === adAccountId);
+  if (!acct) return null;
+
+  if (!campaignName) {
+    // Account level
+    const coc = acct.cocTotals;
+    return (coc?.sales > 0) ? acct.fbSpend / coc.sales : null;
   }
-  return '';
+
+  const camp = acct.campaigns?.find(c => c.name === campaignName);
+  if (!camp) return null;
+
+  if (!adsetName) return camp.cpp > 0 ? camp.cpp : null;
+
+  const adset = camp.adsets?.find(a => a.name === adsetName);
+  if (!adset) return null;
+
+  if (!adName) return adset.cpp > 0 ? adset.cpp : null;
+
+  const ad = adset.ads?.find(a => a.name === adName);
+  return ad?.cpp > 0 ? ad.cpp : null;
 }
 
 // ============================================================
 // LOADING / ERROR STATES
 // ============================================================
 function showLoadingSkeleton() {
-  const cols = 14;
+  const cols = 15;
   const skeletonRow = (w) => `
     <tr class="data-row">
       <td><div class="skeleton" style="width:${w}%">&nbsp;</div></td>
