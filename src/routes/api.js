@@ -109,7 +109,7 @@ module.exports = router;
 // Revenue debug endpoint
 router.get('/debug/revenue/:clientId', async (req, res) => {
   try {
-    const client = getClient(req.params.clientId);
+    const client = getClientById(req.params.clientId);
     const { campaignId, startDate, endDate } = req.query;
     const axios = require('axios');
     
