@@ -19,6 +19,15 @@ const RAILWAY_API = 'https://backboard.railway.app/graphql/v2';
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 
 router.use((req, res, next) => {
+  console.log('AUTH CHECK - received:', req.headers['x-admin-password'], 'expected:', process.env.ADMIN_PASSWORD);
+  const auth = req.headers['x-admin-password'];
+  if (auth !== process.env.ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+});
+
+router.use((req, res, next) => {
   // Allow GET to /admin (the HTML page) without auth check here — handled client-side
   // All /api/admin/* routes require the header
   const auth = req.headers['x-admin-password'];
