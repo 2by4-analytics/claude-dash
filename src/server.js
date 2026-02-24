@@ -9,8 +9,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 // API routes MUST come before static file serving
-app.use('/api', apiRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', apiRoutes);
 // Admin page - must be before the catch-all
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/admin.html'));
