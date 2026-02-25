@@ -547,7 +547,8 @@ function setDateToYesterday() {
 }
 
 function fmt(d) {
-  return d.toISOString().split('T')[0];
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  // returns YYYY-MM-DD in Central time
 }
 
 // Store cppTargets per adAccountId: { "act_XXX": 20, "act_YYY": 15 }
