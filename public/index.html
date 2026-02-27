@@ -18,6 +18,73 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; line-height: 1.5; min-height: 100vh; overflow-x: hidden; }
 
+  /* ── LOGIN SCREEN ── */
+  #login-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #login-overlay.hidden { display: none; }
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 40px;
+    width: 340px;
+    text-align: center;
+  }
+  .login-box h1 {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+  .login-box h1 span { color: var(--text2); font-weight: 400; }
+  .login-box p { color: var(--text3); margin-bottom: 28px; font-size: 13px; }
+  .login-box input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+    margin-bottom: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: var(--mono);
+  }
+  .login-box input:focus { border-color: var(--accent); }
+  .login-box input::placeholder { color: var(--text3); }
+  .login-box .login-btn {
+    width: 100%;
+    padding: 10px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--mono);
+    letter-spacing: 0.05em;
+    transition: opacity 0.15s;
+  }
+  .login-box .login-btn:hover { opacity: 0.85; }
+  .login-error {
+    color: var(--bad);
+    font-size: 12px;
+    margin-bottom: 12px;
+    display: none;
+    font-family: var(--mono);
+  }
+
   /* HEADER */
   .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 16px; position: sticky; top: 0; z-index: 100; }
   .header-top { display: flex; align-items: center; gap: 12px; }
@@ -187,6 +254,18 @@
 </style>
 </head>
 <body>
+
+<!-- ── Login Overlay ── -->
+<div id="login-overlay">
+  <div class="login-box">
+    <h1>MEDIA<span>/</span>DASH</h1>
+    <p>Enter password to continue</p>
+    <div class="login-error" id="login-error">Incorrect password</div>
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+    <button class="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
 <header class="header">
   <div class="header-top">
     <div class="logo">MEDIA<span>/</span>DASH</div>
@@ -220,35 +299,84 @@
   <div class="mobile-cards" id="mobileCards"></div>
 </main>
 <script>
-// STATE
-let currentData = null;
-const collapsed = new Set();
-let cppTargets = {};
-let priorData = null;
+// ============================================================
+// AUTH
+// ============================================================
+var DASH_PASSWORD = '';
 
+function doLogin() {
+  var pw = document.getElementById('login-password').value;
+  if (!pw) return;
+  fetch('/api/auth/verify', {
+    method: 'POST',
+    headers: { 'x-dash-password': pw }
+  }).then(function(res) {
+    if (!res.ok) {
+      document.getElementById('login-error').style.display = 'block';
+      return;
+    }
+    DASH_PASSWORD = pw;
+    document.getElementById('login-overlay').classList.add('hidden');
+    document.getElementById('login-error').style.display = 'none';
+    init();
+  }).catch(function() {
+    document.getElementById('login-error').style.display = 'block';
+  });
+}
+
+document.getElementById('login-password').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doLogin();
+});
+
+// Wrap fetch with auth header for all dashboard API calls
+function authFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['x-dash-password'] = DASH_PASSWORD;
+  return fetch(url, opts);
+}
+
+// ============================================================
+// STATE
+// ============================================================
+var currentData = null;
+var collapsed = new Set();
+var cppTargets = {};
+var priorData = null;
+
+// ============================================================
 // INIT
-async function init() {
-  const y = new Date(); y.setDate(y.getDate() - 1);
-  const ys = y.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+// ============================================================
+function init() {
+  var y = new Date(); y.setDate(y.getDate() - 1);
+  var ys = y.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
   document.getElementById('startDate').value = ys;
   document.getElementById('endDate').value = ys;
-  await loadClients();
-  setupListeners();
+  loadClients().then(function() { setupListeners(); });
 }
 
 function fmt(d) { return d.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
 
-async function loadClients() {
-  try {
-    const res = await fetch('/api/clients');
-    const { clients } = await res.json();
-    const sel = document.getElementById('clientSelect');
+function loadClients() {
+  return authFetch('/api/clients').then(function(res) {
+    return res.json();
+  }).then(function(data) {
+    var clients = data.clients;
+    var sel = document.getElementById('clientSelect');
     sel.innerHTML = clients.length
-      ? clients.map(c => '<option value="'+c.id+'">'+c.name+'</option>').join('')
+      ? clients.map(function(c) { return '<option value="'+c.id+'">'+c.name+'</option>'; }).join('')
       : '<option value="">No clients configured</option>';
     cppTargets = {};
-    for (const c of clients) for (const a of c.adAccounts || []) if (a.cppTarget) cppTargets[a.fbAdAccountId] = parseFloat(a.cppTarget);
-  } catch (e) { document.getElementById('clientSelect').innerHTML = '<option value="">Error loading clients</option>'; }
+    for (var i = 0; i < clients.length; i++) {
+      var c = clients[i];
+      for (var j = 0; j < (c.adAccounts || []).length; j++) {
+        var a = c.adAccounts[j];
+        if (a.cppTarget) cppTargets[a.fbAdAccountId] = parseFloat(a.cppTarget);
+      }
+    }
+  }).catch(function() {
+    document.getElementById('clientSelect').innerHTML = '<option value="">Error loading clients</option>';
+  });
 }
 
 function setupListeners() {
@@ -297,7 +425,7 @@ function applyPreset(preset) {
 }
 
 // LOAD DATA
-async function loadDashboard() {
+function loadDashboard() {
   var clientId = document.getElementById('clientSelect').value;
   var startDate = document.getElementById('startDate').value;
   var endDate = document.getElementById('endDate').value;
@@ -308,33 +436,34 @@ async function loadDashboard() {
   document.getElementById('alertsPanel').style.display = 'none';
   showLoadingSkeleton();
 
-  try {
-    var results = await Promise.all([
-      fetch('/api/dashboard/'+clientId+'?startDate='+startDate+'&endDate='+endDate),
-      fetch('/api/prior/'+clientId+'?startDate='+startDate+'&endDate='+endDate).catch(function() { return null; })
-    ]);
+  Promise.all([
+    authFetch('/api/dashboard/'+clientId+'?startDate='+startDate+'&endDate='+endDate),
+    authFetch('/api/prior/'+clientId+'?startDate='+startDate+'&endDate='+endDate).catch(function() { return null; })
+  ]).then(function(results) {
     var res = results[0]; var priorRes = results[1];
     if (!res.ok) throw new Error('Server error: '+res.status);
-    var data = await res.json();
+    return Promise.all([res.json(), (priorRes && priorRes.ok) ? priorRes.json() : null]);
+  }).then(function(parsed) {
+    var data = parsed[0]; var prior = parsed[1];
     currentData = data;
-    priorData = (priorRes && priorRes.ok) ? await priorRes.json() : null;
+    priorData = prior;
 
     if (data.errors && data.errors.length) {
       setStatus('error', 'Loaded with '+data.errors.length+' error(s): '+data.errors.map(function(e){return e.error}).join(', '));
     } else {
       var priorLabel = priorData ? ' · vs '+priorData.startDate+' → '+priorData.endDate : '';
-      setStatus('ok', 'Loaded '+data.adAccounts.length+' ad account(s) · '+startDate+' → '+endDate+priorLabel);
+      setStatus('ok', 'Loaded '+data.adAccounts.length+' ad account(s) · '+document.getElementById('startDate').value+' → '+document.getElementById('endDate').value+priorLabel);
     }
     renderSummaryCards(data);
     renderAll();
     renderAlerts(data);
     document.getElementById('tableActions').style.display = 'flex';
-  } catch (e) {
+  }).catch(function(e) {
     setStatus('error', 'Failed to load: '+e.message);
     showError(e.message);
-  } finally {
+  }).finally(function() {
     document.getElementById('loadBtn').disabled = false;
-  }
+  });
 }
 
 function setStatus(state, msg) {
@@ -499,12 +628,10 @@ function buildMCard(key,level,tag,tagClass,name,fbSpend,coc,roas,cpp,aov,hasChil
   var rc=roasVal>0?(roasVal>=1.5?'good':roasVal>=1?'':'bad'):'muted';
   var isColl=collapsed.has(key);
 
-  // CPP color
   var cppCls='';
   var target=cppTargets[adAccountId]||null;
   if(cppVal>0&&target) cppCls=cppVal<=target?'good':'bad';
 
-  // Delta CPP
   var deltaCppHtml='';
   if(cppVal>0){
     var pc=getPriorCpp(adAccountId,campaignName,adsetName,level===3?name:null);
@@ -551,19 +678,31 @@ function buildMCard(key,level,tag,tagClass,name,fbSpend,coc,roas,cpp,aov,hasChil
 }
 
 // ALERTS
-async function renderAlerts(data) {
+function renderAlerts(data) {
   var panel=document.getElementById('alertsPanel'),grid=document.getElementById('alertsGrid'),subtitle=document.getElementById('alertsSubtitle');
   if(!Object.keys(cppTargets).length){
-    try{var r=await fetch('/api/clients');var d=await r.json();for(var c of d.clients)for(var a of c.adAccounts||[])if(a.cppTarget)cppTargets[a.fbAdAccountId]=parseFloat(a.cppTarget);}catch(e){}
+    authFetch('/api/clients').then(function(r){return r.json();}).then(function(d){
+      for(var i=0;i<d.clients.length;i++){var c=d.clients[i];for(var j=0;j<(c.adAccounts||[]).length;j++){var a=c.adAccounts[j];if(a.cppTarget)cppTargets[a.fbAdAccountId]=parseFloat(a.cppTarget);}}
+      doRenderAlerts(data,panel,grid,subtitle);
+    }).catch(function(){});
+    return;
   }
+  doRenderAlerts(data,panel,grid,subtitle);
+}
+
+function doRenderAlerts(data,panel,grid,subtitle) {
   if(!Object.keys(cppTargets).length){panel.style.display='none';return;}
   var flagged=[];
-  for(var acct of data.adAccounts||[]){
+  for(var ai=0;ai<(data.adAccounts||[]).length;ai++){
+    var acct=data.adAccounts[ai];
     var target=cppTargets[acct.fbAdAccountId];if(!target)continue;
-    for(var camp of acct.campaigns||[]){
-      for(var adset of camp.adsets||[]){
+    for(var ci=0;ci<(acct.campaigns||[]).length;ci++){
+      var camp=acct.campaigns[ci];
+      for(var si=0;si<(camp.adsets||[]).length;si++){
+        var adset=camp.adsets[si];
         if((adset.fbSpend||0)>=25&&(adset.cpp||0)>target)flagged.push({level:'adset',acctName:acct.cocCampaignName,name:adset.name,cpp:adset.cpp,target:target,spend:adset.fbSpend,priorCpp:getPriorCpp(acct.fbAdAccountId,camp.name,adset.name,null),overTarget:adset.cpp-target});
-        for(var ad of adset.ads||[]){
+        for(var di=0;di<(adset.ads||[]).length;di++){
+          var ad=adset.ads[di];
           if((ad.fbSpend||0)>=25&&(ad.cpp||0)>target)flagged.push({level:'ad',acctName:acct.cocCampaignName,name:ad.name,cpp:ad.cpp,target:target,spend:ad.fbSpend,priorCpp:getPriorCpp(acct.fbAdAccountId,camp.name,adset.name,ad.name),overTarget:ad.cpp-target});
         }
       }
@@ -624,7 +763,16 @@ function fmtShort(n){if(n==null||n===0)return '—';if(n>=1e6)return '$'+(n/1e6)
 function truncate(s,m){if(!s)return '';return s.length>m?s.slice(0,m)+'…':s;}
 function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 
-init();
+// ============================================================
+// BOOT — check if password is required
+// ============================================================
+fetch('/api/auth/verify', { method: 'POST' }).then(function(r) {
+  if (r.ok) {
+    // No password configured — skip login, go straight to dashboard
+    document.getElementById('login-overlay').classList.add('hidden');
+    init();
+  }
+}).catch(function() {});
 </script>
 </body>
 </html>
