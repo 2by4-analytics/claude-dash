@@ -519,7 +519,7 @@ function buildMCard(key,level,tag,tagClass,name,fbSpend,coc,roas,cpp,aov,hasChil
   card.innerHTML='<div class="m-card-header">'+togHtml
     +'<div class="m-card-info"><div class="m-card-tag-name"><span class="level-tag '+tagClass+'">'+tag+'</span><div class="m-card-name" title="'+esc(name)+'">'+esc(name)+'</div></div></div>'
     +'<div class="m-card-quick">'
-    +'<div class="m-card-qs"><div class="m-card-qs-label">ROAS</div><div class="m-card-qs-value '+rc+'">'+(roasVal>0?roasVal.toFixed(2)+'x':'—')+'</div></div>'
+    +'<div class="m-card-qs"><div class="m-card-qs-label">CPP</div><div class="m-card-qs-value '+cppCls+'">'+(cppVal>0?fmtC(cppVal):'—')+'</div></div>'
     +'<div class="m-card-qs"><div class="m-card-qs-label">Spend</div><div class="m-card-qs-value">'+fmtShort(spend)+'</div></div>'
     +'</div></div>'
     +'<div class="m-card-detail"><div class="m-card-metrics">'
