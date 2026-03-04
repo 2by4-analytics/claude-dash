@@ -4,7 +4,7 @@ const COC_BASE = 'https://api.checkoutchamp.com';
 
 function fmtDate(d) {
   const [y, m, day] = d.split('-');
-  return `${parseInt(m)}/${parseInt(day)}/${y.slice(2)}`;
+    return `${parseInt(m)}/${parseInt(day)}/${y}`;
 }
 
 async function fetchAllPages(url, params) {
