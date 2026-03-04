@@ -10,7 +10,7 @@ const { mergeHierarchy } = require('../services/merger');
 router.get('/clients', (req, res) => {
   const clients = getClients().map(c => ({
     id: c.id,
-    name: c.name,
+    name: c.name,h
     adAccounts: c.adAccounts.map(a => ({
       fbAdAccountId: a.fbAdAccountId,
       cocCampaignId: a.cocCampaignId,
@@ -80,7 +80,7 @@ router.get('/debug/coc/:clientId', async (req, res) => {
   // COC date format: M/D/YY
   function fmtDate(d) {
     const [y, m, day] = d.split('-');
-    return `${parseInt(m)}/${parseInt(day)}/${y.slice(2)}`;
+    return `${parseInt(m)}/${parseInt(day)}/${y}`;
   }
 
   const baseParams = { loginId: client.cocLoginId, password: client.cocPassword, campaignId, startDate: fmtDate(startDate), endDate: fmtDate(endDate) };
@@ -115,7 +115,7 @@ router.get('/debug/revenue/:clientId', async (req, res) => {
     
     function fmtDate(d) {
       const [y, m, day] = d.split('-');
-      return `${parseInt(m)}/${parseInt(day)}/${y.slice(2)}`;
+      return `${parseInt(m)}/${parseInt(day)}/${y}`;
     }
     
     const account = client.adAccounts.find(a => String(a.cocCampaignId) === String(campaignId));
