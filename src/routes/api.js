@@ -10,7 +10,7 @@ const { mergeHierarchy } = require('../services/merger');
 router.get('/clients', (req, res) => {
   const clients = getClients().map(c => ({
     id: c.id,
-    name: c.name,h
+    name: c.name,
     adAccounts: c.adAccounts.map(a => ({
       fbAdAccountId: a.fbAdAccountId,
       cocCampaignId: a.cocCampaignId,
