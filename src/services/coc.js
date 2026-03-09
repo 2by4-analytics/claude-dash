@@ -171,7 +171,7 @@ async function getCocCampaignTotals(loginId, password, campaignId, dateStart, da
 async function getCocHierarchy(loginId, password, campaignId, dateStart, dateStop, fbCampaignNames) {
   const results = {};
 
-  for (const campaignName of fbCampaignNames) {
+  await Promise.all(fbCampaignNames.map(async (campaignName) => {
     try {
       const utmParams = { UTMCampaign: campaignName };
 
@@ -231,7 +231,7 @@ async function getCocHierarchy(loginId, password, campaignId, dateStart, dateSto
       console.error(`getCocHierarchy error for "${campaignName}":`, err.message);
       results[campaignName] = { cocData: null, adsets: {}, error: err.message };
     }
-  }
+  }));
 
   return results;
 }
