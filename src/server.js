@@ -40,10 +40,17 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/admin.html'));
 });
 
-// Static files and frontend catch-all AFTER API routes
+// Static files AFTER API routes
 app.use(express.static(path.join(__dirname, '../public')));
+
+// /dash serves the media dashboard
+app.get('/dash', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/dash.html'));
+});
+
+// Unknown routes → home
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
+  res.redirect('/');
 });
 
 app.listen(PORT, () => {

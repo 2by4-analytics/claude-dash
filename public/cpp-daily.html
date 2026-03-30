@@ -29,68 +29,6 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
 
-  /* ── Login overlay ── */
-  #login-overlay {
-    position: fixed; inset: 0;
-    background: var(--bg);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 100;
-  }
-
-  #login-overlay.hidden { display: none; }
-
-  .login-box {
-    width: 320px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .login-logo {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
-  }
-
-  .login-input {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 13px;
-    padding: 10px 14px;
-    outline: none;
-    width: 100%;
-    transition: border-color 0.15s;
-  }
-
-  .login-input:focus { border-color: var(--accent); }
-
-  .login-btn {
-    background: var(--accent);
-    border: none;
-    color: var(--bg);
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 700;
-    padding: 10px;
-    cursor: pointer;
-    letter-spacing: 0.05em;
-    transition: opacity 0.15s;
-  }
-
-  .login-btn:hover { opacity: 0.85; }
-
-  .login-error {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--red);
-    display: none;
-  }
-
   /* ── Nav ── */
   nav {
     display: flex;
@@ -345,17 +283,6 @@
 </head>
 <body>
 
-<!-- Login overlay -->
-<div id="login-overlay">
-  <div class="login-box">
-    <div class="login-logo">2×4 DASH</div>
-    <input class="login-input" id="login-password" type="password" placeholder="Password"
-      onkeydown="if(event.key==='Enter') doLogin()">
-    <div class="login-error" id="login-error">Incorrect password</div>
-    <button class="login-btn" onclick="doLogin()">ENTER</button>
-  </div>
-</div>
-
 <nav>
   <a href="/" class="nav-logo">2×4</a>
   <span class="nav-sep">/</span>
@@ -399,29 +326,11 @@
 <script>
 var DASH_PASSWORD = sessionStorage.getItem('dash_password') || '';
 
-function doLogin() {
-  var pw = document.getElementById('login-password').value;
-  fetch('/api/auth/verify', { headers: { 'x-dash-password': pw } })
-    .then(r => r.json())
-    .then(d => {
-      if (d.ok) {
-        DASH_PASSWORD = pw;
-        sessionStorage.setItem('dash_password', pw);
-        document.getElementById('login-overlay').classList.add('hidden');
-        load();
-      } else {
-        document.getElementById('login-error').style.display = 'block';
-      }
-    })
-    .catch(() => { document.getElementById('login-error').style.display = 'block'; });
-}
-
 function apiFetch(path) {
   return fetch(path, { headers: { 'x-dash-password': DASH_PASSWORD } }).then(r => {
     if (r.status === 401) {
       sessionStorage.removeItem('dash_password');
-      DASH_PASSWORD = '';
-      document.getElementById('login-overlay').classList.remove('hidden');
+      window.location.href = '/';
       throw new Error('Unauthorized');
     }
     return r.json();
@@ -556,21 +465,10 @@ function render(rows) {
   }).join('');
 }
 
-// Auto-login if password already in session
 if (DASH_PASSWORD) {
-  fetch('/api/auth/verify', { headers: { 'x-dash-password': DASH_PASSWORD } })
-    .then(r => r.json())
-    .then(d => {
-      if (d.ok) {
-        document.getElementById('login-overlay').classList.add('hidden');
-        load();
-      } else {
-        sessionStorage.removeItem('dash_password');
-        DASH_PASSWORD = '';
-      }
-    }).catch(() => {});
+  load();
 } else {
-  document.getElementById('login-password').focus();
+  window.location.href = '/';
 }
 </script>
 </body>
