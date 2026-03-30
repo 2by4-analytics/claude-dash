@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2by4 — CPP Daily</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --surface2: #161616;
+    --border: #1e1e1e;
+    --accent: #e8ff00;
+    --text: #f0f0f0;
+    --text-dim: #555;
+    --text-mid: #888;
+    --red: #ff4444;
+    --yellow: #ffaa00;
+    --green: #00ff88;
+    --red-dim: rgba(255,68,68,0.08);
+    --yellow-dim: rgba(255,170,0,0.08);
+    --green-dim: rgba(0,255,136,0.08);
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  /* ── Login overlay ── */
+  #login-overlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+
+  #login-overlay.hidden { display: none; }
+
+  .login-box {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .login-logo {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+
+  .login-input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 14px;
+    outline: none;
+    width: 100%;
+    transition: border-color 0.15s;
+  }
+
+  .login-input:focus { border-color: var(--accent); }
+
+  .login-btn {
+    background: var(--accent);
+    border: none;
+    color: var(--bg);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 10px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: opacity 0.15s;
+  }
+
+  .login-btn:hover { opacity: 0.85; }
+
+  .login-error {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--red);
+    display: none;
+  }
+
+  /* ── Nav ── */
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 32px;
+    height: 48px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: 0.05em;
+  }
+
+  .nav-sep { color: var(--text-dim); font-size: 12px; }
+  .nav-page { font-family: var(--mono); font-size: 11px; color: var(--text-mid); letter-spacing: 0.05em; }
+
+  .nav-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .nav-link {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+  }
+
+  .nav-link:hover { color: var(--text); }
+
+  .refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 5px 12px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: all 0.15s;
+  }
+
+  .refresh-btn:hover { border-color: var(--text-dim); color: var(--text); }
+  .refresh-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* ── Page ── */
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+  }
+
+  .heading { margin-bottom: 36px; }
+
+  .heading-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .heading-date {
+    font-size: 26px;
+    font-weight: 300;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .heading-meta {
+    margin-top: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ── Two-column grid ── */
+  .client-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .client-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .client-card.good { border-color: rgba(0,255,136,0.15); }
+  .client-card.warn { border-color: rgba(255,170,0,0.15); }
+  .client-card.over { border-color: rgba(255,68,68,0.15); }
+
+  .card-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-mid);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .card-cpp {
+    font-family: var(--mono);
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .card-cpp.good { color: var(--green); }
+  .card-cpp.warn { color: var(--yellow); }
+  .card-cpp.over { color: var(--red); }
+  .card-cpp.none { color: var(--text-dim); font-size: 26px; font-weight: 400; }
+
+  .card-vs-target {
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-bottom: 18px;
+  }
+
+  .card-vs-target.good { color: var(--green); }
+  .card-vs-target.warn { color: var(--yellow); }
+  .card-vs-target.over { color: var(--red); }
+  .card-vs-target.none { color: var(--text-dim); }
+
+  .card-divider {
+    height: 1px;
+    background: var(--border);
+    margin-bottom: 14px;
+  }
+
+  .card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+
+  .card-row:last-child { margin-bottom: 0; }
+
+  .card-row-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .card-row-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-mid);
+  }
+
+  .card-7d {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-mid);
+  }
+
+  .card-7d-vs {
+    font-size: 10px;
+    margin-left: 6px;
+  }
+
+  .card-7d-vs.better { color: var(--green); }
+  .card-7d-vs.worse  { color: var(--red); }
+
+  .card-7d-loading {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    animation: fade 1.2s ease-in-out infinite;
+  }
+
+  .card-error {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 20px 22px;
+  }
+
+  .card-error-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .card-error-msg {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--red);
+  }
+
+  /* ── Footer summary ── */
+  .footer-summary {
+    display: flex;
+    gap: 40px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .footer-stat-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .footer-stat-value {
+    font-family: var(--mono);
+    font-size: 16px;
+    color: var(--text-mid);
+  }
+
+  .skeleton {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    height: 180px;
+    animation: fade 1.2s ease-in-out infinite;
+  }
+
+  @keyframes fade {
+    0%, 100% { opacity: 0.3; }
+    50%       { opacity: 0.7; }
+  }
+
+  @media (max-width: 600px) {
+    .client-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login overlay -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">2×4 DASH</div>
+    <input class="login-input" id="login-password" type="password" placeholder="Password"
+      onkeydown="if(event.key==='Enter') doLogin()">
+    <div class="login-error" id="login-error">Incorrect password</div>
+    <button class="login-btn" onclick="doLogin()">ENTER</button>
+  </div>
+</div>
+
+<nav>
+  <a href="/" class="nav-logo">2×4</a>
+  <span class="nav-sep">/</span>
+  <span class="nav-page">CPP Daily</span>
+  <div class="nav-right">
+    <a href="/" class="nav-link">← Dashboard</a>
+    <button class="refresh-btn" id="refresh-btn" onclick="load()">Refresh</button>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="heading">
+    <div class="heading-label">Sticker Funnel · Account CPP</div>
+    <div class="heading-date" id="heading-date">Yesterday</div>
+    <div class="heading-meta" id="heading-meta">Loading...</div>
+  </div>
+
+  <div class="client-grid" id="client-grid">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+
+  <div class="footer-summary" id="footer-summary" style="display:none;">
+    <div>
+      <div class="footer-stat-label">Total Spend</div>
+      <div class="footer-stat-value" id="stat-spend">—</div>
+    </div>
+    <div>
+      <div class="footer-stat-label">Total Purchases</div>
+      <div class="footer-stat-value" id="stat-purchases">—</div>
+    </div>
+    <div>
+      <div class="footer-stat-label">Blended CPP</div>
+      <div class="footer-stat-value" id="stat-cpp">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+var DASH_PASSWORD = sessionStorage.getItem('dash_password') || '';
+
+function doLogin() {
+  var pw = document.getElementById('login-password').value;
+  fetch('/api/auth/verify', { headers: { 'x-dash-password': pw } })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        DASH_PASSWORD = pw;
+        sessionStorage.setItem('dash_password', pw);
+        document.getElementById('login-overlay').classList.add('hidden');
+        load();
+      } else {
+        document.getElementById('login-error').style.display = 'block';
+      }
+    })
+    .catch(() => { document.getElementById('login-error').style.display = 'block'; });
+}
+
+function apiFetch(path) {
+  return fetch(path, { headers: { 'x-dash-password': DASH_PASSWORD } }).then(r => {
+    if (r.status === 401) {
+      sessionStorage.removeItem('dash_password');
+      DASH_PASSWORD = '';
+      document.getElementById('login-overlay').classList.remove('hidden');
+      throw new Error('Unauthorized');
+    }
+    return r.json();
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt$(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function fmtInt(n) {
+  if (n == null || isNaN(n)) return '—';
+  return Math.round(n).toLocaleString();
+}
+
+function cppClass(cpp, target) {
+  if (cpp == null) return 'none';
+  const r = cpp / target;
+  if (r <= 1.0)  return 'good';
+  if (r <= 1.15) return 'warn';
+  return 'over';
+}
+
+function vsTargetLabel(cpp, target) {
+  if (cpp == null) return { text: 'No data', cls: 'none' };
+  const diff = cpp - target;
+  const pct = Math.abs(diff / target * 100).toFixed(0);
+  if (diff <= 0) return { text: `${pct}% under target`, cls: 'good' };
+  return { text: `${pct}% over $${target} target`, cls: diff / target <= 0.15 ? 'warn' : 'over' };
+}
+
+// ── Load ─────────────────────────────────────────────────────────────────────
+
+async function load() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+
+  const dailyPromise = apiFetch('/api/cpp-daily');
+  const weekPromise  = apiFetch('/api/cpp-7day');
+
+  try {
+    const rows = await dailyPromise;
+    render(rows);
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+
+    weekPromise.then(weekRows => {
+      const byId = {};
+      for (const r of weekRows) byId[r.id] = r;
+      for (const [id, w] of Object.entries(byId)) {
+        const el = document.getElementById('7d-' + id);
+        if (!el) continue;
+        if (w.error) {
+          el.innerHTML = '<span class="card-7d" style="color:var(--text-dim);">—</span>';
+        } else {
+          const dayCppStr = document.getElementById('cpp-' + id)?.dataset.cpp;
+          const dayCpp = dayCppStr ? parseFloat(dayCppStr) : null;
+          var vsHtml = '';
+          if (dayCpp && w.cpp) {
+            const diff = dayCpp - w.cpp;
+            const pct = Math.abs(diff / w.cpp * 100).toFixed(0);
+            const cls = diff <= 0 ? 'better' : 'worse';
+            const arrow = diff <= 0 ? '↓' : '↑';
+            vsHtml = '<span class="card-7d-vs ' + cls + '">' + arrow + pct + '%</span>';
+          }
+          el.innerHTML = '<span class="card-7d">' + fmt$(w.cpp) + vsHtml + '</span>';
+        }
+      }
+    }).catch(() => {
+      document.querySelectorAll('[id^="7d-"]').forEach(el => {
+        el.innerHTML = '<span class="card-7d" style="color:var(--text-dim);">—</span>';
+      });
+    });
+
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('client-grid').innerHTML =
+        '<div class="card-error" style="grid-column:1/-1"><div class="card-error-msg">Error: ' + e.message + '</div></div>';
+      document.getElementById('heading-meta').textContent = 'Failed to load';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+  }
+}
+
+function render(rows) {
+  const firstValid = rows.find(r => r.date);
+  if (firstValid) {
+    const d = new Date(firstValid.date + 'T12:00:00');
+    document.getElementById('heading-date').textContent =
+      d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  document.getElementById('heading-meta').textContent =
+    'Updated ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const valid = rows.filter(r => !r.error);
+  const totalSpend = valid.reduce((s, r) => s + (r.spend || 0), 0);
+  const totalPurchases = valid.reduce((s, r) => s + (r.purchases || 0), 0);
+  const blended = totalPurchases > 0 ? totalSpend / totalPurchases : null;
+
+  document.getElementById('stat-spend').textContent = fmt$(totalSpend);
+  document.getElementById('stat-purchases').textContent = fmtInt(totalPurchases);
+  document.getElementById('stat-cpp').textContent = fmt$(blended);
+  document.getElementById('footer-summary').style.display = 'flex';
+
+  rows.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+
+  document.getElementById('client-grid').innerHTML = rows.map(row => {
+    if (row.error) {
+      return '<div class="card-error"><div class="card-error-name">' + (row.name || row.id) + '</div>' +
+        '<div class="card-error-msg">' + row.error + '</div></div>';
+    }
+
+    const cls = cppClass(row.cpp, row.cppTarget);
+    const vt = vsTargetLabel(row.cpp, row.cppTarget);
+
+    return '<div class="client-card ' + cls + '">' +
+      '<div class="card-name">' + row.name + '</div>' +
+      '<div class="card-cpp ' + cls + '" id="cpp-' + row.id + '" data-cpp="' + (row.cpp ?? '') + '">' + (row.cpp != null ? fmt$(row.cpp) : '—') + '</div>' +
+      '<div class="card-vs-target ' + vt.cls + '">' + vt.text + '</div>' +
+      '<div class="card-divider"></div>' +
+      '<div class="card-row"><span class="card-row-label">Spend</span><span class="card-row-value">' + fmt$(row.spend) + '</span></div>' +
+      '<div class="card-row"><span class="card-row-label">Purchases</span><span class="card-row-value">' + fmtInt(row.purchases) + '</span></div>' +
+      '<div class="card-row"><span class="card-row-label">7D Avg</span>' +
+        '<span id="7d-' + row.id + '"><span class="card-7d-loading">loading...</span></span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// Auto-login if password already in session
+if (DASH_PASSWORD) {
+  fetch('/api/auth/verify', { headers: { 'x-dash-password': DASH_PASSWORD } })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        document.getElementById('login-overlay').classList.add('hidden');
+        load();
+      } else {
+        sessionStorage.removeItem('dash_password');
+        DASH_PASSWORD = '';
+      }
+    }).catch(() => {});
+} else {
+  document.getElementById('login-password').focus();
+}
+</script>
+</body>
+</html>

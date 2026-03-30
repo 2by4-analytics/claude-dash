@@ -331,4 +331,81 @@ router.get('/prior/:clientId', async (req, res) => {
 });
 
 
+// ─── CPP Daily / 7D snapshot (sticker funnel clients) ─────────────────────────
+
+const SHED_IDS = ['craig-revmoto-mmjeuw8s', 'craig-readynation-mmkodtu2'];
+
+function getYesterdayInTz(tz) {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split('T')[0];
+}
+
+function dateNDaysAgoInTz(n, tz) {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split('T')[0];
+}
+
+async function fetchCppForRange(client, startDate, endDate, timeoutMs = 55000) {
+  let totalSpend = 0, totalSales = 0;
+
+  await Promise.all(client.adAccounts.map(async (adAccount) => {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
+    try {
+      const [fbData, cocTotals] = await Promise.all([
+        getFbHierarchy(client.fbAccessToken, adAccount.fbAdAccountId, startDate, endDate),
+        getCocCampaignTotals(client.cocLoginId, client.cocPassword, adAccount.cocCampaignId, startDate, endDate),
+      ]);
+      totalSpend += fbData.reduce((s, c) => s + c.spend, 0);
+      totalSales += cocTotals?.sales || 0;
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+
+  return {
+    spend: totalSpend,
+    purchases: totalSales,
+    cpp: totalSales > 0 ? totalSpend / totalSales : null,
+  };
+}
+
+// GET /api/cpp-daily — yesterday's account-level CPP for all sticker funnel clients
+router.get('/cpp-daily', async (req, res) => {
+  const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
+  const tz = 'America/Chicago';
+  const date = getYesterdayInTz(tz);
+
+  const results = await Promise.allSettled(clients.map(async (client) => {
+    const cppTarget = client.adAccounts?.[0]?.cppTarget || null;
+    const { spend, purchases, cpp } = await fetchCppForRange(client, date, date);
+    return { id: client.id, name: client.name, date, spend, purchases, cpp, cppTarget };
+  }));
+
+  res.json(results.map((r, i) => r.status === 'fulfilled'
+    ? r.value
+    : { id: clients[i].id, name: clients[i].name, error: r.reason?.message }
+  ));
+});
+
+// GET /api/cpp-7day — 7-day average CPP for all sticker funnel clients
+router.get('/cpp-7day', async (req, res) => {
+  const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
+  const tz = 'America/Chicago';
+  const end = getYesterdayInTz(tz);
+  const start = dateNDaysAgoInTz(7, tz);
+
+  const results = await Promise.allSettled(clients.map(async (client) => {
+    const { spend, purchases, cpp } = await fetchCppForRange(client, start, end, 90000);
+    return { id: client.id, spend, purchases, cpp, start, end };
+  }));
+
+  res.json(results.map((r, i) => r.status === 'fulfilled'
+    ? r.value
+    : { id: clients[i].id, error: r.reason?.message }
+  ));
+});
+
 module.exports = router;
