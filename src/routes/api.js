@@ -107,6 +107,97 @@ router.get('/debug/coc/:clientId', async (req, res) => {
 });
 
 
+// GET /api/debug/orders/:clientId?campaignId=X&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+// Fetches ALL orders with no status/type filter and breaks down counts by orderStatus x orderType
+// Use this to diagnose why dashboard purchase count differs from COC
+router.get('/debug/orders/:clientId', async (req, res) => {
+  const client = getClientById(req.params.clientId);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const { campaignId, startDate, endDate } = req.query;
+  if (!campaignId || !startDate || !endDate) {
+    return res.status(400).json({ error: 'Required: campaignId, startDate (YYYY-MM-DD), endDate (YYYY-MM-DD)' });
+  }
+
+  function fmtDate(d) {
+    const [y, m, day] = d.split('-');
+    return `${parseInt(m)}/${parseInt(day)}/${y}`;
+  }
+
+  // Fetch all orders — no status or type filter
+  let allOrders = [];
+  let page = 1;
+  let totalResults = null;
+  try {
+    while (true) {
+      const r = await axios.get('https://api.checkoutchamp.com/order/query/', {
+        params: {
+          loginId: client.cocLoginId,
+          password: client.cocPassword,
+          campaignId,
+          startDate: fmtDate(startDate),
+          endDate: fmtDate(endDate),
+          resultsPerPage: 200,
+          page,
+        }
+      });
+      const data = r.data;
+      if (data.result !== 'SUCCESS') { break; }
+      const msg = data.message;
+      if (totalResults === null) totalResults = msg.totalResults || 0;
+      const records = msg.data || [];
+      allOrders = allOrders.concat(records);
+      if (allOrders.length >= totalResults || records.length === 0) break;
+      page++;
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  // Break down by orderStatus x orderType
+  const byStatus = {};
+  const byType = {};
+  const byStatusAndType = {};
+
+  for (const o of allOrders) {
+    const status = o.orderStatus || 'UNKNOWN';
+    const type = o.orderType || 'UNKNOWN';
+    const key = `${status} / ${type}`;
+
+    byStatus[status] = (byStatus[status] || 0) + 1;
+    byType[type] = (byType[type] || 0) + 1;
+    byStatusAndType[key] = (byStatusAndType[key] || 0) + 1;
+  }
+
+  // What our dashboard counts (COMPLETE + NEW_SALE)
+  const dashboardCount = allOrders.filter(o => o.orderStatus === 'COMPLETE' && o.orderType === 'NEW_SALE').length;
+  const totalFetched = allOrders.length;
+
+  res.json({
+    clientId: req.params.clientId,
+    campaignId,
+    dateRange: `${startDate} → ${endDate}`,
+    totalResults,
+    totalFetched,
+    dashboardCounts: dashboardCount,
+    gap: totalFetched - dashboardCount,
+    breakdown: {
+      byStatus,
+      byType,
+      byStatusAndType,
+    },
+    // Full order list for manual inspection (orderId, status, type, amount)
+    orders: allOrders.map(o => ({
+      orderId: o.orderId,
+      orderStatus: o.orderStatus,
+      orderType: o.orderType,
+      totalAmount: o.totalAmount,
+      dateCreated: o.dateCreated,
+      UTMCampaign: o.UTMCampaign,
+    })),
+  });
+});
+
 // Revenue debug endpoint
 router.get('/debug/revenue/:clientId', async (req, res) => {
   try {
