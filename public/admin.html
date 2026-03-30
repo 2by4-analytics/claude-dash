@@ -236,6 +236,24 @@
   .form-row input:focus { border-color: var(--accent); }
   .form-row input::placeholder { color: var(--muted); }
 
+  .form-row select {
+    width: 100%;
+    padding: 9px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7299' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .form-row select:focus { border-color: var(--accent); }
+
   /* ── Ad account rows in form ── */
   #ad-account-rows { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 
@@ -353,6 +371,18 @@
       <label>Client Name</label>
       <input type="text" id="f-name" placeholder="e.g. Eric">
     </div>
+    <div class="form-row">
+      <label>Timezone</label>
+      <select id="f-timezone">
+        <option value="America/New_York">America/New_York (Eastern)</option>
+        <option value="America/Chicago" selected>America/Chicago (Central)</option>
+        <option value="America/Denver">America/Denver (Mountain)</option>
+        <option value="America/Los_Angeles">America/Los_Angeles (Pacific)</option>
+        <option value="America/Phoenix">America/Phoenix (Arizona)</option>
+        <option value="America/Anchorage">America/Anchorage (Alaska)</option>
+        <option value="Pacific/Honolulu">Pacific/Honolulu (Hawaii)</option>
+      </select>
+    </div>
 
     <div class="form-section-label">Checkout Champ Credentials</div>
     <div class="form-row">
@@ -459,7 +489,7 @@ function renderClients() {
       <div class="client-header" onclick="toggleCard(${i})">
         <div>
           <div class="client-name">${esc(c.name)}</div>
-          <div class="client-id">${esc(c.id)}</div>
+          <div class="client-id">${esc(c.id)} &nbsp;·&nbsp; ${esc(c.timezone || 'America/Chicago')}</div>
         </div>
         <div class="client-actions">
           <button class="btn btn-ghost" onclick="event.stopPropagation(); openModal('${c.id}')">Edit</button>
@@ -514,12 +544,14 @@ function openModal(clientId) {
   ['f-name','f-cocLoginId','f-cocPassword','f-fbAccessToken'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  document.getElementById('f-timezone').value = 'America/Chicago';
   document.getElementById('ad-account-rows').innerHTML = '';
 
   if (editingClientId) {
     const c = clients.find(x => x.id === clientId);
     if (c) {
       document.getElementById('f-name').value = c.name;
+      document.getElementById('f-timezone').value = c.timezone || 'America/Chicago';
       document.getElementById('f-cocLoginId').value = c.cocLoginId;
       document.getElementById('f-cocPassword').value = c.cocPassword;
       document.getElementById('f-fbAccessToken').value = c.fbAccessToken;
@@ -594,6 +626,7 @@ async function saveClient() {
 
   const payload = {
     name: document.getElementById('f-name').value.trim(),
+    timezone: document.getElementById('f-timezone').value,
     cocLoginId: document.getElementById('f-cocLoginId').value.trim(),
     cocPassword: document.getElementById('f-cocPassword').value.trim(),
     fbAccessToken: document.getElementById('f-fbAccessToken').value.trim(),

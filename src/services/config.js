@@ -17,6 +17,8 @@
  * ]
  */
 
+const DEFAULT_TIMEZONE = 'America/Chicago';
+
 let _clients = null;
 
 function getClients() {
@@ -42,4 +44,12 @@ function getClientById(id) {
   return getClients().find(c => c.id === id) || null;
 }
 
-module.exports = { getClients, getClientById };
+function getClientTimezone(client) {
+  return client.timezone || DEFAULT_TIMEZONE;
+}
+
+function clearClientCache() {
+  _clients = null;
+}
+
+module.exports = { getClients, getClientById, getClientTimezone, clearClientCache };

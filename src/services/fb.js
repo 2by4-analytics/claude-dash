@@ -85,11 +85,20 @@ async function getEntityStatuses(accessToken, adAccountId) {
 }
 
 /**
- * Fetch campaign-level UTM breakdown from FB URL tags
+ * Fetch campaign-level UTM breakdown from FB URL tags.
  * We use campaign_name as utm_campaign, adset_name as utm_medium, ad_name as utm_content
- * (matching how you've set up tracking)
+ * (matching how you've set up tracking).
+ *
+ * @param {string} accessToken   - FB Marketing API access token
+ * @param {string} adAccountId   - e.g. "act_123456789"
+ * @param {string} dateStart     - YYYY-MM-DD, interpreted in the ad account's Meta timezone
+ * @param {string} dateStop      - YYYY-MM-DD, interpreted in the ad account's Meta timezone
+ * @param {string} [timezone]    - IANA timezone string from client config (e.g. 'America/Chicago').
+ *                                 Callers must ensure dateStart/dateStop already reflect this timezone.
+ *                                 Meta interprets date strings in the ad account's configured timezone,
+ *                                 so no conversion is performed here.
  */
-async function getFbHierarchy(accessToken, adAccountId, dateStart, dateStop) {
+async function getFbHierarchy(accessToken, adAccountId, dateStart, dateStop, timezone) {
   const [rawData, statusMap] = await Promise.all([
     getFbInsights(accessToken, adAccountId, dateStart, dateStop),
     getEntityStatuses(accessToken, adAccountId),

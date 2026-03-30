@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const { getClients, getClientById } = require('../services/config');
+const { getClients, getClientById, getClientTimezone } = require('../services/config');
 const { getFbHierarchy } = require('../services/fb');
 const { getCocHierarchy, getCocCampaignTotals } = require('../services/coc');
 const { mergeHierarchy } = require('../services/merger');
@@ -11,6 +11,7 @@ router.get('/clients', (req, res) => {
   const clients = getClients().map(c => ({
     id: c.id,
     name: c.name,
+    timezone: getClientTimezone(c),
     adAccounts: c.adAccounts.map(a => ({
       fbAdAccountId: a.fbAdAccountId,
       cocCampaignId: a.cocCampaignId,
@@ -60,7 +61,7 @@ router.get('/dashboard/:clientId', async (req, res) => {
   }));
 
   results.sort((a, b) => a.cocCampaignName.localeCompare(b.cocCampaignName));
-  res.json({ clientId, clientName: client.name, startDate, endDate, adAccounts: results, errors: errors.length > 0 ? errors : undefined });
+  res.json({ clientId, clientName: client.name, timezone: getClientTimezone(client), startDate, endDate, adAccounts: results, errors: errors.length > 0 ? errors : undefined });
 });
 
 // ============================================================
@@ -378,13 +379,13 @@ async function fetchCppForRange(client, startDate, endDate, timeoutMs = 55000) {
 
 async function buildDailySnapshot() {
   const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
-  const tz = 'America/Chicago';
-  const date = getYesterdayInTz(tz);
 
   const results = await Promise.allSettled(clients.map(async (client) => {
+    const tz = getClientTimezone(client);
+    const date = getYesterdayInTz(tz);
     const cppTarget = client.adAccounts?.[0]?.cppTarget || null;
     const { spend, purchases, cpp } = await fetchCppForRange(client, date, date);
-    return { id: client.id, name: client.name, date, spend, purchases, cpp, cppTarget };
+    return { id: client.id, name: client.name, timezone: tz, date, spend, purchases, cpp, cppTarget };
   }));
 
   return results.map((r, i) => r.status === 'fulfilled'
@@ -395,11 +396,11 @@ async function buildDailySnapshot() {
 
 async function buildWeekSnapshot() {
   const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
-  const tz = 'America/Chicago';
-  const end = getYesterdayInTz(tz);
-  const start = dateNDaysAgoInTz(7, tz);
 
   const results = await Promise.allSettled(clients.map(async (client) => {
+    const tz = getClientTimezone(client);
+    const end = getYesterdayInTz(tz);
+    const start = dateNDaysAgoInTz(7, tz);
     const { spend, purchases, cpp } = await fetchCppForRange(client, start, end, 90000);
     return { id: client.id, spend, purchases, cpp, start, end };
   }));

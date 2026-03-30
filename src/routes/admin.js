@@ -13,6 +13,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { clearClientCache } = require('../services/config');
 
 const RAILWAY_API = 'https://backboard.railway.app/graphql/v2';
 
@@ -89,6 +90,9 @@ async function saveClientsToRailway(clients) {
 
   // Also update the in-process env so reads are immediately consistent
   process.env.CLIENTS = JSON.stringify(clients);
+
+  // Bust the config cache so the next getClients() call returns fresh data
+  clearClientCache();
 }
 
 function generateId(name) {
@@ -115,7 +119,7 @@ router.get('/clients', async (req, res) => {
 router.post('/clients', async (req, res) => {
   try {
     const clients = await getCurrentClients();
-    const { name, cocLoginId, cocPassword, fbAccessToken, adAccounts } = req.body;
+    const { name, cocLoginId, cocPassword, fbAccessToken, timezone, adAccounts } = req.body;
 
     if (!name || !cocLoginId || !cocPassword || !fbAccessToken) {
       return res.status(400).json({ error: 'name, cocLoginId, cocPassword, fbAccessToken are required' });
@@ -124,6 +128,7 @@ router.post('/clients', async (req, res) => {
     const newClient = {
       id: generateId(name),
       name: name.trim(),
+      timezone: (timezone || 'America/Chicago').trim(),
       cocLoginId: cocLoginId.trim(),
       cocPassword: cocPassword.trim(),
       fbAccessToken: fbAccessToken.trim(),
@@ -150,11 +155,12 @@ router.put('/clients/:id', async (req, res) => {
     const idx = clients.findIndex(c => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Client not found' });
 
-    const { name, cocLoginId, cocPassword, fbAccessToken, adAccounts } = req.body;
+    const { name, cocLoginId, cocPassword, fbAccessToken, timezone, adAccounts } = req.body;
 
     clients[idx] = {
       ...clients[idx],
       ...(name && { name: name.trim() }),
+      ...(timezone !== undefined && { timezone: timezone.trim() || 'America/Chicago' }),
       ...(cocLoginId && { cocLoginId: cocLoginId.trim() }),
       ...(cocPassword && { cocPassword: cocPassword.trim() }),
       ...(fbAccessToken && { fbAccessToken: fbAccessToken.trim() }),
@@ -185,6 +191,38 @@ router.delete('/clients/:id', async (req, res) => {
     const removed = clients.splice(idx, 1)[0];
     await saveClientsToRailway(clients);
     res.json({ success: true, removed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/migrate-timezones — one-time backfill for existing clients
+const TIMEZONE_MAP = {
+  'client1':                   'America/Chicago',
+  'eric-faith-mncg09ih':       'America/Chicago',
+  'client2':                   'America/New_York',
+  'brian-mm0ufx84':            'America/Chicago',
+  'matteo-mm0urlzh':           'America/Los_Angeles',
+  'todd-mn3cd22p':             'America/New_York',
+  'coco-vm-mn7htjvz':          'America/Los_Angeles',
+  'coco-black-wolf-mn7hvdev':  'America/Los_Angeles',
+  'craig-revmoto-mmjeuw8s':    'America/New_York',
+  'craig-readynation-mmkodtu2':'America/New_York',
+};
+
+router.put('/migrate-timezones', async (req, res) => {
+  try {
+    const clients = await getCurrentClients();
+    let updated = 0;
+    for (const c of clients) {
+      const tz = TIMEZONE_MAP[c.id];
+      if (tz && !c.timezone) {
+        c.timezone = tz;
+        updated++;
+      }
+    }
+    await saveClientsToRailway(clients);
+    res.json({ success: true, updated, message: `Set timezone on ${updated} client(s)` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
