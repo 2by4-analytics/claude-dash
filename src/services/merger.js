@@ -33,6 +33,9 @@ function mergeHierarchy(fbAdAccountData, cocHierarchyData, adAccountConfig) {
   // Sum total FB spend across all campaigns in this ad account
   merged.fbSpend = fbAdAccountData.reduce((sum, c) => sum + c.spend, 0);
 
+  // Derive account-level status: ACTIVE if any campaign is ACTIVE
+  merged.effective_status = fbAdAccountData.some(c => c.effective_status === 'ACTIVE') ? 'ACTIVE' : (fbAdAccountData.length > 0 ? 'PAUSED' : null);
+
   // Build merged campaigns
   for (const fbCampaign of fbAdAccountData) {
     const cocCampaignData = cocHierarchyData?.[fbCampaign.name] || null;
@@ -42,6 +45,7 @@ function mergeHierarchy(fbAdAccountData, cocHierarchyData, adAccountConfig) {
     const mergedCampaign = {
       name: fbCampaign.name,
       fbSpend: fbCampaign.spend,
+      effective_status: fbCampaign.effective_status || null,
       cocData,
       ...metrics,
       adsets: []
@@ -55,6 +59,7 @@ function mergeHierarchy(fbAdAccountData, cocHierarchyData, adAccountConfig) {
       const mergedAdset = {
         name: fbAdset.name,
         fbSpend: fbAdset.spend,
+        effective_status: fbAdset.effective_status || null,
         cocData: cocAdsetData,
         ...adsetMetrics,
         ads: []
@@ -68,6 +73,7 @@ function mergeHierarchy(fbAdAccountData, cocHierarchyData, adAccountConfig) {
         mergedAdset.ads.push({
           name: fbAd.name,
           fbSpend: fbAd.spend,
+          effective_status: fbAd.effective_status || null,
           cocData: cocAdData,
           ...adMetrics
         });

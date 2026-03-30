@@ -50,12 +50,50 @@ async function getFbInsights(accessToken, adAccountId, dateStart, dateStop) {
 }
 
 /**
+ * Fetch current effective_status for all campaigns, adsets, and ads in an account.
+ * Returns lookup maps by name at each level.
+ */
+async function getEntityStatuses(accessToken, adAccountId) {
+  async function fetchAll(endpoint) {
+    const all = [];
+    let url = `${BASE_URL}/${adAccountId}/${endpoint}`;
+    const params = { access_token: accessToken, fields: 'name,effective_status', limit: 500 };
+    try {
+      while (url) {
+        const res = await axios.get(url, { params: url.includes('?') ? {} : params });
+        if (res.data.data) all.push(...res.data.data);
+        url = res.data.paging?.next || null;
+      }
+    } catch (err) {
+      // Non-fatal — status dots just won't show if this fails
+      console.warn(`[fb] getEntityStatuses ${endpoint} failed:`, err.message);
+    }
+    return all;
+  }
+
+  const [campaigns, adsets, ads] = await Promise.all([
+    fetchAll('campaigns'),
+    fetchAll('adsets'),
+    fetchAll('ads'),
+  ]);
+
+  return {
+    campaigns: Object.fromEntries(campaigns.map(c => [c.name, c.effective_status])),
+    adsets: Object.fromEntries(adsets.map(a => [a.name, a.effective_status])),
+    ads: Object.fromEntries(ads.map(a => [a.name, a.effective_status])),
+  };
+}
+
+/**
  * Fetch campaign-level UTM breakdown from FB URL tags
  * We use campaign_name as utm_campaign, adset_name as utm_medium, ad_name as utm_content
  * (matching how you've set up tracking)
  */
 async function getFbHierarchy(accessToken, adAccountId, dateStart, dateStop) {
-  const rawData = await getFbInsights(accessToken, adAccountId, dateStart, dateStop);
+  const [rawData, statusMap] = await Promise.all([
+    getFbInsights(accessToken, adAccountId, dateStart, dateStop),
+    getEntityStatuses(accessToken, adAccountId),
+  ]);
 
   // Build hierarchy: campaign -> adset -> ad
   const campaigns = {};
@@ -67,19 +105,19 @@ async function getFbHierarchy(accessToken, adAccountId, dateStart, dateStop) {
     const spend = parseFloat(row.spend || 0);
 
     if (!campaigns[campaignKey]) {
-      campaigns[campaignKey] = { name: campaignKey, spend: 0, adsets: {} };
+      campaigns[campaignKey] = { name: campaignKey, spend: 0, effective_status: statusMap.campaigns[campaignKey] || null, adsets: {} };
     }
     campaigns[campaignKey].spend += spend;
 
     const camp = campaigns[campaignKey];
     if (!camp.adsets[adsetKey]) {
-      camp.adsets[adsetKey] = { name: adsetKey, spend: 0, ads: {} };
+      camp.adsets[adsetKey] = { name: adsetKey, spend: 0, effective_status: statusMap.adsets[adsetKey] || null, ads: {} };
     }
     camp.adsets[adsetKey].spend += spend;
 
     const adset = camp.adsets[adsetKey];
     if (!adset.ads[adKey]) {
-      adset.ads[adKey] = { name: adKey, spend: 0 };
+      adset.ads[adKey] = { name: adKey, spend: 0, effective_status: statusMap.ads[adKey] || null };
     }
     adset.ads[adKey].spend += spend;
   }

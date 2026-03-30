@@ -504,23 +504,23 @@ function renderTable(data) {
     var acctC = collapsed.has(acctKey);
     var coc = acct.cocTotals || {};
     var acctRoas = acct.fbSpend>0&&coc.salesTotal ? coc.salesTotal/acct.fbSpend : 0;
-    rows.push(buildRow(acctKey,0,'ACCOUNT','tag-account',acct.cocCampaignName,acct.fbAdAccountId,!!(acct.campaigns&&acct.campaigns.length),acctC,acct.fbSpend,coc,acctRoas,coc.sales>0?acct.fbSpend/coc.sales:0,coc.sales>0?coc.salesTotal/coc.sales:0,acct.fbAdAccountId,'',''));
+    rows.push(buildRow(acctKey,0,'ACCOUNT','tag-account',acct.cocCampaignName,acct.fbAdAccountId,!!(acct.campaigns&&acct.campaigns.length),acctC,acct.fbSpend,coc,acctRoas,coc.sales>0?acct.fbSpend/coc.sales:0,coc.sales>0?coc.salesTotal/coc.sales:0,acct.fbAdAccountId,'','',acct.effective_status||null));
     if (acctC) continue;
     for (var j=0;j<(acct.campaigns||[]).length;j++) {
       var camp = acct.campaigns[j];
       var campKey = 'camp-'+acct.fbAdAccountId+'-'+camp.name;
       var campC = collapsed.has(campKey);
-      rows.push(buildRow(campKey,1,'CAMPAIGN','tag-campaign',camp.name,'',!!(camp.adsets&&camp.adsets.length),campC,camp.fbSpend,camp.cocData||{},camp.roas,camp.cpp,camp.aov,'','',''));
+      rows.push(buildRow(campKey,1,'CAMPAIGN','tag-campaign',camp.name,'',!!(camp.adsets&&camp.adsets.length),campC,camp.fbSpend,camp.cocData||{},camp.roas,camp.cpp,camp.aov,'','','',camp.effective_status||null));
       if (campC) continue;
       for (var k=0;k<(camp.adsets||[]).length;k++) {
         var adset = camp.adsets[k];
         var adsetKey = 'adset-'+acct.fbAdAccountId+'-'+camp.name+'-'+adset.name;
         var adsetC = collapsed.has(adsetKey);
-        rows.push(buildRow(adsetKey,2,'ADSET','tag-adset',adset.name,'',!!(adset.ads&&adset.ads.length),adsetC,adset.fbSpend,adset.cocData||{},adset.roas,adset.cpp,adset.aov,acct.fbAdAccountId,camp.name,''));
+        rows.push(buildRow(adsetKey,2,'ADSET','tag-adset',adset.name,'',!!(adset.ads&&adset.ads.length),adsetC,adset.fbSpend,adset.cocData||{},adset.roas,adset.cpp,adset.aov,acct.fbAdAccountId,camp.name,'',adset.effective_status||null));
         if (adsetC) continue;
         for (var l=0;l<(adset.ads||[]).length;l++) {
           var ad = adset.ads[l];
-          rows.push(buildRow('ad-'+acct.fbAdAccountId+'-'+camp.name+'-'+adset.name+'-'+ad.name,3,'AD','tag-ad',ad.name,'',false,false,ad.fbSpend,ad.cocData||{},ad.roas,ad.cpp,ad.aov,acct.fbAdAccountId,camp.name,adset.name));
+          rows.push(buildRow('ad-'+acct.fbAdAccountId+'-'+camp.name+'-'+adset.name+'-'+ad.name,3,'AD','tag-ad',ad.name,'',false,false,ad.fbSpend,ad.cocData||{},ad.roas,ad.cpp,ad.aov,acct.fbAdAccountId,camp.name,adset.name,ad.effective_status||null));
         }
       }
     }
@@ -544,7 +544,13 @@ function renderTable(data) {
   });
 }
 
-function buildRow(key,level,tag,tagClass,name,subname,hasChildren,isCollapsed,fbSpend,coc,roas,cpp,aov,adAccountId,campaignName,adsetName) {
+function statusDot(status) {
+  var color = status === 'ACTIVE' ? '#22c55e' : '#ef4444';
+  var dot = status ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+color+';margin-right:6px;vertical-align:middle;flex-shrink:0;"></span>' : '';
+  return dot;
+}
+
+function buildRow(key,level,tag,tagClass,name,subname,hasChildren,isCollapsed,fbSpend,coc,roas,cpp,aov,adAccountId,campaignName,adsetName,status) {
   var tog = hasChildren ? '<button class="toggle-btn '+(isCollapsed?'collapsed':'')+'" data-key="'+key+'">▾</button>' : '<span style="display:inline-block;width:14px"></span>';
   var rc = roas>0 ? (roas>=1.5?'good':roas>=1?'':'bad') : '';
   function cell(v,cls) { return (v!=null&&v!==0&&v!==''&&v!=='---') ? '<td class="'+(cls||'')+'">'+v+'</td>' : '<td class="empty">—</td>'; }
@@ -570,7 +576,7 @@ function buildRow(key,level,tag,tagClass,name,subname,hasChildren,isCollapsed,fb
   }
 
   return '<tr class="data-row row-level-'+level+'" data-key="'+key+'">'
-    +'<td><div class="row-name">'+tog+'<span class="level-tag '+tagClass+'">'+tag+'</span><span title="'+esc(name)+'">'+truncate(name,level===3?30:40)+'</span>'+(subname?'<span style="color:var(--text3);font-size:10px;margin-left:6px">'+subname+'</span>':'')+'</div></td>'
+    +'<td><div class="row-name">'+tog+'<span class="level-tag '+tagClass+'">'+tag+'</span>'+statusDot(status)+'<span title="'+esc(name)+'">'+truncate(name,level===3?30:40)+'</span>'+(subname?'<span style="color:var(--text3);font-size:10px;margin-left:6px">'+subname+'</span>':'')+'</div></td>'
     +cell(fmtC(fbSpend))+cell(fmtN(coc.partials))+cell(fmtP(coc.convRate))+cell(fmtN(coc.declines))+cell(fmtP(coc.declineRate))
     +cell(fmtN(coc.sales))+cell(fmtP(coc.salesRate))+cell(fmtC(coc.salesTotal))+cell(fmtC(coc.netRevenue))+cell(fmtC(coc.avgTicket))
     +'<td class="val-roas '+rc+'">'+(roas>0?roas.toFixed(2)+'x':'—')+'</td>'
@@ -588,23 +594,23 @@ function renderMobileCards(data) {
   for (var i=0;i<data.adAccounts.length;i++) {
     var acct=data.adAccounts[i], acctKey='acct-'+acct.fbAdAccountId, coc=acct.cocTotals||{};
     var ar=acct.fbSpend>0&&coc.salesTotal?coc.salesTotal/acct.fbSpend:0;
-    var acctCard=buildMCard(acctKey,0,'ACCT','tag-account',acct.cocCampaignName,acct.fbSpend,coc,ar,coc.sales>0?acct.fbSpend/coc.sales:0,coc.sales>0?coc.salesTotal/coc.sales:0,!!(acct.campaigns&&acct.campaigns.length),acct.fbAdAccountId,'','');
+    var acctCard=buildMCard(acctKey,0,'ACCT','tag-account',acct.cocCampaignName,acct.fbSpend,coc,ar,coc.sales>0?acct.fbSpend/coc.sales:0,coc.sales>0?coc.salesTotal/coc.sales:0,!!(acct.campaigns&&acct.campaigns.length),acct.fbAdAccountId,'','',acct.effective_status||null);
 
     if (!collapsed.has(acctKey)&&acct.campaigns&&acct.campaigns.length) {
       var w1=mkCW();
       for (var j=0;j<acct.campaigns.length;j++) {
         var camp=acct.campaigns[j],campKey='camp-'+acct.fbAdAccountId+'-'+camp.name;
-        var campCard=buildMCard(campKey,1,'CAMP','tag-campaign',camp.name,camp.fbSpend,camp.cocData||{},camp.roas,camp.cpp,camp.aov,!!(camp.adsets&&camp.adsets.length),acct.fbAdAccountId,camp.name,'');
+        var campCard=buildMCard(campKey,1,'CAMP','tag-campaign',camp.name,camp.fbSpend,camp.cocData||{},camp.roas,camp.cpp,camp.aov,!!(camp.adsets&&camp.adsets.length),acct.fbAdAccountId,camp.name,'',camp.effective_status||null);
         if (!collapsed.has(campKey)&&camp.adsets&&camp.adsets.length) {
           var w2=mkCW();
           for (var k=0;k<camp.adsets.length;k++) {
             var adset=camp.adsets[k],adsetKey='adset-'+acct.fbAdAccountId+'-'+camp.name+'-'+adset.name;
-            var adsetCard=buildMCard(adsetKey,2,'ASET','tag-adset',adset.name,adset.fbSpend,adset.cocData||{},adset.roas,adset.cpp,adset.aov,!!(adset.ads&&adset.ads.length),acct.fbAdAccountId,camp.name,adset.name);
+            var adsetCard=buildMCard(adsetKey,2,'ASET','tag-adset',adset.name,adset.fbSpend,adset.cocData||{},adset.roas,adset.cpp,adset.aov,!!(adset.ads&&adset.ads.length),acct.fbAdAccountId,camp.name,adset.name,adset.effective_status||null);
             if (!collapsed.has(adsetKey)&&adset.ads&&adset.ads.length) {
               var w3=mkCW();
               for (var l=0;l<adset.ads.length;l++) {
                 var ad=adset.ads[l];
-                w3.appendChild(buildMCard('ad-'+acct.fbAdAccountId+'-'+camp.name+'-'+adset.name+'-'+ad.name,3,'AD','tag-ad',ad.name,ad.fbSpend,ad.cocData||{},ad.roas,ad.cpp,ad.aov,false,acct.fbAdAccountId,camp.name,adset.name));
+                w3.appendChild(buildMCard('ad-'+acct.fbAdAccountId+'-'+camp.name+'-'+adset.name+'-'+ad.name,3,'AD','tag-ad',ad.name,ad.fbSpend,ad.cocData||{},ad.roas,ad.cpp,ad.aov,false,acct.fbAdAccountId,camp.name,adset.name,ad.effective_status||null));
               }
               adsetCard.appendChild(w3);
             }
@@ -622,7 +628,7 @@ function renderMobileCards(data) {
 
 function mkCW(){var d=document.createElement('div');d.className='m-card-children open';return d;}
 
-function buildMCard(key,level,tag,tagClass,name,fbSpend,coc,roas,cpp,aov,hasChildren,adAccountId,campaignName,adsetName) {
+function buildMCard(key,level,tag,tagClass,name,fbSpend,coc,roas,cpp,aov,hasChildren,adAccountId,campaignName,adsetName,status) {
   var card=document.createElement('div');
   card.className='m-card level-'+level;
   var spend=fbSpend||0, roasVal=roas||0, cppVal=cpp||0, aovVal=aov||0;
@@ -645,7 +651,7 @@ function buildMCard(key,level,tag,tagClass,name,fbSpend,coc,roas,cpp,aov,hasChil
   var togHtml=hasChildren?'<div class="m-card-toggle '+(isColl?'collapsed':'')+'">▾</div>':'';
 
   card.innerHTML='<div class="m-card-header">'+togHtml
-    +'<div class="m-card-info"><div class="m-card-tag-name"><span class="level-tag '+tagClass+'">'+tag+'</span><div class="m-card-name" title="'+esc(name)+'">'+esc(name)+'</div></div></div>'
+    +'<div class="m-card-info"><div class="m-card-tag-name"><span class="level-tag '+tagClass+'">'+tag+'</span>'+statusDot(status)+'<div class="m-card-name" title="'+esc(name)+'">'+esc(name)+'</div></div></div>'
     +'<div class="m-card-quick">'
     +'<div class="m-card-qs"><div class="m-card-qs-label">CPP</div><div class="m-card-qs-value '+cppCls+'">'+(cppVal>0?fmtC(cppVal):'—')+'</div></div>'
     +'<div class="m-card-qs"><div class="m-card-qs-label">Spend</div><div class="m-card-qs-value">'+fmtShort(spend)+'</div></div>'
