@@ -2,7 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const cron = require('node-cron');
 const apiRoutes = require('./routes/api');
+const { runCppSnapshot } = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +54,12 @@ app.get('/dash', (req, res) => {
 app.get('*', (req, res) => {
   res.redirect('/');
 });
+
+// 5am CT daily — pre-warm CPP snapshot so it's ready when Alan opens the menu
+cron.schedule('0 5 * * *', () => {
+  console.log('[Cron] Running 5am CPP snapshot...');
+  runCppSnapshot();
+}, { timezone: 'America/Chicago' });
 
 app.listen(PORT, () => {
   console.log(`Dashboard running on port ${PORT}`);

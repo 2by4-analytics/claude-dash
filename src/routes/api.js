@@ -335,6 +335,10 @@ router.get('/prior/:clientId', async (req, res) => {
 
 const SHED_IDS = ['craig-revmoto-mmjeuw8s', 'craig-readynation-mmkodtu2'];
 
+// In-memory cache — populated at 5am CT, served for the rest of the day
+let cacheDaily = { date: null, data: null };
+let cacheWeek  = { date: null, data: null };
+
 function getYesterdayInTz(tz) {
   const d = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
   d.setDate(d.getDate() - 1);
@@ -372,8 +376,7 @@ async function fetchCppForRange(client, startDate, endDate, timeoutMs = 55000) {
   };
 }
 
-// GET /api/cpp-daily — yesterday's account-level CPP for all sticker funnel clients
-router.get('/cpp-daily', async (req, res) => {
+async function buildDailySnapshot() {
   const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
   const tz = 'America/Chicago';
   const date = getYesterdayInTz(tz);
@@ -384,14 +387,13 @@ router.get('/cpp-daily', async (req, res) => {
     return { id: client.id, name: client.name, date, spend, purchases, cpp, cppTarget };
   }));
 
-  res.json(results.map((r, i) => r.status === 'fulfilled'
+  return results.map((r, i) => r.status === 'fulfilled'
     ? r.value
     : { id: clients[i].id, name: clients[i].name, error: r.reason?.message }
-  ));
-});
+  );
+}
 
-// GET /api/cpp-7day — 7-day average CPP for all sticker funnel clients
-router.get('/cpp-7day', async (req, res) => {
+async function buildWeekSnapshot() {
   const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
   const tz = 'America/Chicago';
   const end = getYesterdayInTz(tz);
@@ -402,10 +404,51 @@ router.get('/cpp-7day', async (req, res) => {
     return { id: client.id, spend, purchases, cpp, start, end };
   }));
 
-  res.json(results.map((r, i) => r.status === 'fulfilled'
+  return results.map((r, i) => r.status === 'fulfilled'
     ? r.value
     : { id: clients[i].id, error: r.reason?.message }
-  ));
+  );
+}
+
+// Called by the 5am cron — pre-warms both caches
+async function runCppSnapshot() {
+  const date = getYesterdayInTz('America/Chicago');
+  console.log('[CPP Snapshot] Running for', date);
+  try {
+    const [daily, week] = await Promise.all([buildDailySnapshot(), buildWeekSnapshot()]);
+    cacheDaily = { date, data: daily };
+    cacheWeek  = { date, data: week };
+    console.log('[CPP Snapshot] Complete');
+  } catch (err) {
+    console.error('[CPP Snapshot] Error:', err.message);
+  }
+}
+
+// GET /api/cpp-daily — serve from cache, fetch on demand if cache is cold
+router.get('/cpp-daily', async (req, res) => {
+  const date = getYesterdayInTz('America/Chicago');
+  if (cacheDaily.date === date && cacheDaily.data) return res.json(cacheDaily.data);
+  try {
+    const data = await buildDailySnapshot();
+    cacheDaily = { date, data };
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/cpp-7day — serve from cache, fetch on demand if cache is cold
+router.get('/cpp-7day', async (req, res) => {
+  const date = getYesterdayInTz('America/Chicago');
+  if (cacheWeek.date === date && cacheWeek.data) return res.json(cacheWeek.data);
+  try {
+    const data = await buildWeekSnapshot();
+    cacheWeek = { date, data };
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
+module.exports.runCppSnapshot = runCppSnapshot;
