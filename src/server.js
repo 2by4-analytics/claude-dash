@@ -26,7 +26,7 @@ app.post('/api/auth/verify', (req, res) => {
 function dashAuth(req, res, next) {
   const expected = process.env.DASH_PASSWORD || process.env.ADMIN_PASSWORD;
   if (!expected) return next(); // no password configured = open access
-  const pw = req.headers['x-dash-password'];
+  const pw = req.headers['x-dash-password'] || req.query.pw;
   if (pw === expected) return next();
   return res.status(401).json({ error: 'Unauthorized' });
 }
