@@ -546,6 +546,12 @@ router.get('/cpp-7day', async (req, res) => {
 // sheds.2by4llc.com has its own codebase + API. The launchpad shows yesterday's
 // CPL per shed client; we proxy through here so the browser only needs the dash
 // password and we can cache to avoid hammering Meta.
+//
+// Upstream contract (from 2by4-sheds/server.js):
+//   GET /api/rollup?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+//   Auth: header `x-dash-password` (sheds has its own DASH_PASSWORD distinct
+//   from this service's). Returns { startDate, endDate, clients:
+//   [{ name, accountId, insights, leads, cpl, error }] }.
 
 const SHEDS_BASE_URL = process.env.SHEDS_BASE_URL || 'https://sheds.2by4llc.com';
 const SHEDS_PASSWORD = process.env.SHEDS_DASH_PASSWORD || process.env.DASH_PASSWORD;
@@ -560,44 +566,34 @@ router.get('/sheds/cpl-yesterday', async (req, res) => {
     return res.json(shedsCplCache.data);
   }
 
-  const headers = SHEDS_PASSWORD ? { 'X-Dash-Password': SHEDS_PASSWORD } : {};
+  const headers = SHEDS_PASSWORD ? { 'x-dash-password': SHEDS_PASSWORD } : {};
 
   try {
-    const clientsRes = await axios.get(`${SHEDS_BASE_URL}/api/clients`, { headers, timeout: 15000 });
-    // Tolerate either { clients: [...] } or [...]
-    const clients = Array.isArray(clientsRes.data) ? clientsRes.data : (clientsRes.data?.clients || []);
+    const r = await axios.get(`${SHEDS_BASE_URL}/api/rollup`, {
+      headers,
+      params: { startDate: yesterday, endDate: yesterday },
+      timeout: 25000,
+    });
 
-    const rows = await Promise.all(clients.map(async (c) => {
-      const accountId = c.accountId || c.fbAdAccountId || c.adAccountId || c.id;
-      const name = c.name || c.clientName || accountId;
-      try {
-        const sumRes = await axios.get(`${SHEDS_BASE_URL}/api/summary`, {
-          headers,
-          params: { accountId, since: yesterday, until: yesterday },
-          timeout: 20000,
-        });
-        const s = sumRes.data || {};
-        return {
-          name,
-          accountId,
-          spend: s.spend ?? null,
-          results: s.results ?? null,
-          costPerResult: s.costPerResult ?? (s.spend && s.results ? s.spend / s.results : null),
-          resultType: s.resultType ?? null,
-        };
-      } catch (err) {
-        return {
-          name,
-          accountId,
-          error: err.response?.data?.error || err.message,
-        };
-      }
-    }));
+    const upstream = Array.isArray(r.data?.clients) ? r.data.clients : [];
+    const rows = upstream.map((c) => {
+      if (c.error) return { name: c.name, accountId: c.accountId, error: c.error };
+      const spend = c.insights?.spend != null ? Number(c.insights.spend) : null;
+      return {
+        name: c.name,
+        accountId: c.accountId,
+        spend,
+        results: c.leads ?? null,
+        costPerResult: c.cpl ?? null,
+        resultType: 'leads',
+      };
+    });
 
     shedsCplCache = { key: yesterday, ts: now, data: rows };
     res.json(rows);
   } catch (err) {
-    res.status(502).json({ error: `Sheds upstream: ${err.message}` });
+    const upstreamMsg = err.response?.data?.error || err.message;
+    res.status(502).json({ error: `Sheds upstream: ${upstreamMsg}` });
   }
 });
 
