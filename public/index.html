@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2by4 Dash</title>
+<title>2by4 Launchpad</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<!-- For Dash -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" type="image/svg+xml">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" type="image/svg+xml">
 <style>
   :root {
     --bg: #0a0a0a;
     --surface: #111111;
+    --surface2: #161616;
     --border: #1e1e1e;
     --accent: #e8ff00;
     --accent-dim: rgba(232,255,0,0.08);
@@ -20,211 +20,346 @@
     --text-dim: #555;
     --text-mid: #888;
     --red: #ff4444;
+    --yellow: #ffaa00;
+    --green: #00ff88;
     --mono: 'Space Mono', monospace;
     --sans: 'DM Sans', sans-serif;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+  a { color: inherit; text-decoration: none; }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
+  /* ── Login (centered, same vibe as before) ── */
+  .login-wrap {
     min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
     padding: 40px 24px;
   }
-
-  .logo {
+  .login-logo {
     font-family: var(--mono);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 13px; font-weight: 700;
     color: var(--accent);
     letter-spacing: 0.08em;
     margin-bottom: 48px;
   }
-
-  .logo span { color: var(--text-dim); font-weight: 400; }
-
-  /* ── Login ── */
+  .login-logo span { color: var(--text-dim); font-weight: 400; }
   #login-section {
-    width: 100%;
-    max-width: 300px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    width: 100%; max-width: 300px;
+    display: flex; flex-direction: column; gap: 10px;
   }
-
   .input {
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
     font-family: var(--mono);
-    font-size: 13px;
-    padding: 11px 14px;
-    outline: none;
-    width: 100%;
+    font-size: 13px; padding: 11px 14px;
+    outline: none; width: 100%;
     transition: border-color 0.15s;
   }
-
   .input:focus { border-color: var(--accent); }
   .input::placeholder { color: var(--text-dim); }
-
   .login-btn {
-    background: var(--accent);
-    border: none;
-    color: var(--bg);
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 700;
-    padding: 11px;
-    cursor: pointer;
-    letter-spacing: 0.06em;
-    transition: opacity 0.15s;
-    width: 100%;
+    background: var(--accent); border: none; color: var(--bg);
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    padding: 11px; cursor: pointer; letter-spacing: 0.06em;
+    transition: opacity 0.15s; width: 100%;
   }
-
   .login-btn:hover { opacity: 0.85; }
-
   .login-error {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--red); display: none;
+  }
+
+  /* ── Page ── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 32px 80px; }
+
+  .page-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 18px; margin-bottom: 36px;
+  }
+  .page-logo {
+    font-family: var(--mono); font-size: 14px; font-weight: 700;
+    color: var(--accent); letter-spacing: 0.12em;
+  }
+  .page-logo span { color: var(--text-dim); font-weight: 400; margin-left: 6px; }
+  .signout-btn {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--text-dim); background: none; border: none;
+    cursor: pointer; letter-spacing: 0.08em;
+    text-transform: uppercase; transition: color 0.15s;
+  }
+  .signout-btn:hover { color: var(--text); }
+
+  /* ── Section header ── */
+  section { margin-bottom: 40px; }
+  .section-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-title {
     font-family: var(--mono);
-    font-size: 11px;
-    color: var(--red);
-    display: none;
+    font-size: 11px; color: var(--text-mid);
+    letter-spacing: 0.18em; text-transform: uppercase;
   }
-
-  /* ── Menu ── */
-  #menu-section {
-    width: 100%;
-    max-width: 560px;
-    display: none;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .menu-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-  }
-
-  .menu-title {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 0.15em;
+  .section-title span { color: var(--text-dim); }
+  .section-meta {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--text-dim); letter-spacing: 0.1em;
     text-transform: uppercase;
   }
-
-  .menu-signout {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--text-dim);
-    background: none;
-    border: none;
-    cursor: pointer;
-    letter-spacing: 0.05em;
-    transition: color 0.15s;
+  .section-link {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--text-dim); letter-spacing: 0.1em;
+    text-transform: uppercase; transition: color 0.15s;
   }
+  .section-link:hover { color: var(--accent); }
 
-  .menu-signout:hover { color: var(--text); }
-
-  .menu-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+  /* ── TODAY (Phase 2 placeholders) ── */
+  .today-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
   }
-
-  .menu-card {
+  .today-block {
     background: var(--surface);
     border: 1px solid var(--border);
-    padding: 24px;
-    text-decoration: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    transition: border-color 0.15s, background 0.15s;
-    cursor: pointer;
+    padding: 22px 24px; min-height: 120px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .today-label {
+    font-family: var(--mono); font-size: 9px;
+    color: var(--text-dim); letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .today-content {
+    font-family: var(--mono); font-size: 18px;
+    color: var(--text-dim); letter-spacing: 0.05em;
   }
 
-  .menu-card:hover {
+  /* ── Compact CPP / CPL cards (~120px wide) ── */
+  .mini-cards {
+    display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .mini-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 14px 14px 12px;
+    width: 130px;
+    display: flex; flex-direction: column;
+    gap: 6px;
+  }
+  .mini-card.good { border-color: rgba(0,255,136,0.18); }
+  .mini-card.over { border-color: rgba(255,68,68,0.18); }
+
+  .mini-name {
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--text-mid); letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mini-value {
+    font-family: var(--mono); font-size: 22px;
+    font-weight: 700; line-height: 1;
+    color: var(--text);
+  }
+  .mini-value.good { color: var(--green); }
+  .mini-value.over { color: var(--red); }
+  .mini-value.none { color: var(--text-dim); font-size: 16px; font-weight: 400; }
+
+  .mini-sub {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--text-dim); letter-spacing: 0.04em;
+    margin-top: 2px;
+  }
+  .mini-sub-loading { animation: fade 1.2s ease-in-out infinite; }
+  .mini-error {
+    font-family: var(--mono); font-size: 10px; color: var(--red);
+  }
+
+  .mini-skel {
+    background: var(--surface); border: 1px solid var(--border);
+    width: 130px; height: 96px;
+    animation: fade 1.2s ease-in-out infinite;
+  }
+  .empty-row {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); padding: 16px 0;
+  }
+
+  @keyframes fade {
+    0%, 100% { opacity: 0.3; }
+    50%       { opacity: 0.7; }
+  }
+
+  /* ── TOOLS ── */
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+  }
+  .tool-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .tool-btn:hover {
     border-color: var(--accent-mid);
     background: var(--accent-dim);
   }
-
-  .menu-card-label {
-    font-family: var(--mono);
-    font-size: 9px;
-    color: var(--text-dim);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  .menu-card-title {
-    font-size: 16px;
-    font-weight: 500;
+  .tool-btn-label {
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
     color: var(--text);
   }
-
-  .menu-card-desc {
-    font-size: 12px;
-    color: var(--text-mid);
-    line-height: 1.5;
-    margin-top: 2px;
-  }
-
-  .menu-card-arrow {
-    font-family: var(--mono);
-    font-size: 14px;
+  .tool-btn-arrow {
+    font-family: var(--mono); font-size: 13px;
     color: var(--text-dim);
-    margin-top: auto;
-    padding-top: 12px;
     transition: color 0.15s;
   }
+  .tool-btn:hover .tool-btn-arrow { color: var(--accent); }
 
-  .menu-card:hover .menu-card-arrow { color: var(--accent); }
+  /* ── CLIENTS (Phase 3) ── */
+  .clients-placeholder {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); letter-spacing: 0.05em;
+    padding: 16px 0;
+  }
+
+  @media (max-width: 600px) {
+    .page { padding: 24px 16px 60px; }
+    .today-grid { grid-template-columns: 1fr; }
+    .mini-card, .mini-skel { width: calc(50% - 5px); }
+    .tool-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
 
-<div class="logo">2×4 <span>DASH</span></div>
-
-<!-- Login -->
-<div id="login-section">
-  <input class="input" id="password" type="password" placeholder="Password"
-    onkeydown="if(event.key==='Enter') doLogin()">
-  <div class="login-error" id="login-error">Incorrect password</div>
-  <button class="login-btn" onclick="doLogin()">SIGN IN</button>
+<!-- ─── LOGIN ─── -->
+<div class="login-wrap" id="login-wrap">
+  <div class="login-logo">2×4 <span>LAUNCHPAD</span></div>
+  <div id="login-section">
+    <input class="input" id="password" type="password" placeholder="Password"
+      onkeydown="if(event.key==='Enter') doLogin()">
+    <div class="login-error" id="login-error">Incorrect password</div>
+    <button class="login-btn" onclick="doLogin()">SIGN IN</button>
+  </div>
 </div>
 
-<!-- Menu -->
-<div id="menu-section">
-  <div class="menu-header">
-    <span class="menu-title">Tools</span>
-    <button class="menu-signout" onclick="signOut()">Sign out</button>
-  </div>
-  <div class="menu-grid">
-    <a class="menu-card" href="/dash">
-      <div class="menu-card-label">Reporting</div>
-      <div class="menu-card-title">Media Dashboard</div>
-      <div class="menu-card-desc">Ad performance by client, date range, campaign, adset, and ad.</div>
-      <div class="menu-card-arrow">→</div>
-    </a>
-    <a class="menu-card" href="/cpp-daily.html">
-      <div class="menu-card-label">Overview</div>
-      <div class="menu-card-title">CPP Daily</div>
-      <div class="menu-card-desc">Yesterday's account-level CPP for all sticker funnel clients vs 7-day average.</div>
-      <div class="menu-card-arrow">→</div>
-    </a>
-    <!-- Add new tools here -->
-  </div>
+<!-- ─── LAUNCHPAD ─── -->
+<div class="page" id="page" style="display:none;">
+
+  <header class="page-header">
+    <div class="page-logo">2×4 <span>LAUNCHPAD</span></div>
+    <button class="signout-btn" onclick="signOut()">Sign out</button>
+  </header>
+
+  <!--
+    Phase 2: TODAY — Google Calendar (meetings) + per-client CLAUDE.md task
+    parsing from Google Drive (tasks). Placeholder for now.
+  -->
+  <section>
+    <div class="section-head">
+      <div class="section-title">Today</div>
+      <div class="section-meta" id="today-date">—</div>
+    </div>
+    <div class="today-grid">
+      <div class="today-block">
+        <div class="today-label">Meetings</div>
+        <div class="today-content">—</div>
+      </div>
+      <div class="today-block">
+        <div class="today-label">Tasks</div>
+        <div class="today-content">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STICKER · yesterday CPP -->
+  <section>
+    <div class="section-head">
+      <div class="section-title">Sticker <span>· yesterday CPP</span></div>
+      <a class="section-link" href="/cpp-daily.html">CPP Daily →</a>
+    </div>
+    <div class="mini-cards" id="sticker-cards">
+      <div class="mini-skel"></div>
+      <div class="mini-skel"></div>
+      <div class="mini-skel"></div>
+      <div class="mini-skel"></div>
+    </div>
+  </section>
+
+  <!-- SHEDS · yesterday CPL (proxied through /api/sheds/cpl-yesterday) -->
+  <section>
+    <div class="section-head">
+      <div class="section-title">Sheds <span>· yesterday CPL</span></div>
+      <a class="section-link" href="https://sheds.2by4llc.com" target="_blank" rel="noopener">Sheds →</a>
+    </div>
+    <div class="mini-cards" id="sheds-cards">
+      <div class="mini-skel"></div>
+      <div class="mini-skel"></div>
+    </div>
+  </section>
+
+  <!-- TOOLS -->
+  <section>
+    <div class="section-head">
+      <div class="section-title">Tools</div>
+    </div>
+    <div class="tool-grid">
+      <a class="tool-btn" href="/dash">
+        <span class="tool-btn-label">Media Dashboard</span>
+        <span class="tool-btn-arrow">→</span>
+      </a>
+      <a class="tool-btn" href="/cpp-daily.html">
+        <span class="tool-btn-label">CPP Daily</span>
+        <span class="tool-btn-arrow">→</span>
+      </a>
+      <a class="tool-btn" href="https://sheds.2by4llc.com" target="_blank" rel="noopener">
+        <span class="tool-btn-label">Sheds Meta Ads</span>
+        <span class="tool-btn-arrow">↗</span>
+      </a>
+      <a class="tool-btn" href="https://brain.2by4llc.com" target="_blank" rel="noopener">
+        <span class="tool-btn-label">Brain</span>
+        <span class="tool-btn-arrow">↗</span>
+      </a>
+      <a class="tool-btn" href="/admin.html">
+        <span class="tool-btn-label">Admin</span>
+        <span class="tool-btn-arrow">→</span>
+      </a>
+    </div>
+  </section>
+
+  <!--
+    Phase 3: CLIENTS — per-client cards/index. Placeholder for now.
+  -->
+  <section>
+    <div class="section-head">
+      <div class="section-title">Clients</div>
+    </div>
+    <div class="clients-placeholder">—</div>
+  </section>
+
 </div>
 
 <script>
 var DASH_PASSWORD = sessionStorage.getItem('dash_password') || '';
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+function apiFetch(path) {
+  return fetch(path, { headers: { 'x-dash-password': DASH_PASSWORD } }).then(function(r) {
+    if (r.status === 401) {
+      sessionStorage.removeItem('dash_password');
+      showLogin();
+      throw new Error('Unauthorized');
+    }
+    return r.json();
+  });
+}
 
 function doLogin() {
   var pw = document.getElementById('password').value;
@@ -234,35 +369,162 @@ function doLogin() {
       if (!r.ok) { document.getElementById('login-error').style.display = 'block'; return; }
       DASH_PASSWORD = pw;
       sessionStorage.setItem('dash_password', pw);
-      showMenu();
+      showLaunchpad();
     })
     .catch(function() { document.getElementById('login-error').style.display = 'block'; });
 }
 
-function showMenu() {
-  document.getElementById('login-section').style.display = 'none';
-  document.getElementById('menu-section').style.display = 'flex';
-}
-
 function signOut() {
   sessionStorage.removeItem('dash_password');
-  document.getElementById('menu-section').style.display = 'none';
-  document.getElementById('login-section').style.display = 'flex';
-  document.getElementById('password').value = '';
+  DASH_PASSWORD = '';
+  showLogin();
 }
 
-// Auto-login if session exists
+function showLogin() {
+  document.getElementById('login-wrap').style.display = 'flex';
+  document.getElementById('page').style.display = 'none';
+  setTimeout(function() {
+    var el = document.getElementById('password');
+    if (el) { el.value = ''; el.focus(); }
+  }, 0);
+}
+
+function showLaunchpad() {
+  document.getElementById('login-wrap').style.display = 'none';
+  document.getElementById('page').style.display = 'block';
+  renderDate();
+  loadSticker();
+  loadSheds();
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmt$(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function renderDate() {
+  var d = new Date();
+  document.getElementById('today-date').textContent =
+    d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
+function shortName(n) {
+  if (!n) return '';
+  // Strip common prefixes/suffixes for compactness
+  return n.replace(/\s*\([^)]*\)\s*/g, '').trim();
+}
+
+// ─── Sticker (yesterday CPP + 7-day avg) ─────────────────────────────────────
+
+function loadSticker() {
+  var grid = document.getElementById('sticker-cards');
+
+  apiFetch('/api/cpp-daily').then(function(rows) {
+    rows.sort(function(a, b) { return (a.name || a.id).localeCompare(b.name || b.id); });
+
+    grid.innerHTML = rows.map(function(row) {
+      if (row.error) {
+        return '<div class="mini-card">' +
+          '<div class="mini-name">' + shortName(row.name || row.id) + '</div>' +
+          '<div class="mini-error">err</div>' +
+        '</div>';
+      }
+      var cls = 'none';
+      if (row.cpp != null && row.cppTarget) {
+        cls = row.cpp <= row.cppTarget ? 'good' : 'over';
+      }
+      var valEl = row.cpp != null
+        ? '<div class="mini-value ' + cls + '" id="sticker-cpp-' + row.id + '">' + fmt$(row.cpp) + '</div>'
+        : '<div class="mini-value none">—</div>';
+
+      return '<div class="mini-card ' + cls + '">' +
+        '<div class="mini-name">' + shortName(row.name) + '</div>' +
+        valEl +
+        '<div class="mini-sub" id="sticker-7d-' + row.id + '">' +
+          '<span class="mini-sub-loading">7d ...</span>' +
+        '</div>' +
+      '</div>';
+    }).join('') || '<div class="empty-row">No sticker clients</div>';
+
+    // 7-day averages load separately
+    apiFetch('/api/cpp-7day').then(function(weekRows) {
+      weekRows.forEach(function(w) {
+        var el = document.getElementById('sticker-7d-' + w.id);
+        if (!el) return;
+        if (w.error || w.cpp == null) {
+          el.textContent = '7d —';
+        } else {
+          el.textContent = '7d ' + fmt$(w.cpp);
+        }
+      });
+    }).catch(function() {
+      document.querySelectorAll('[id^="sticker-7d-"]').forEach(function(el) {
+        el.textContent = '7d —';
+      });
+    });
+  }).catch(function(e) {
+    if (e.message !== 'Unauthorized') {
+      grid.innerHTML = '<div class="empty-row">Failed to load: ' + e.message + '</div>';
+    }
+  });
+}
+
+// ─── Sheds (yesterday CPL via /api/sheds/cpl-yesterday proxy) ────────────────
+
+function loadSheds() {
+  var grid = document.getElementById('sheds-cards');
+
+  apiFetch('/api/sheds/cpl-yesterday').then(function(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      grid.innerHTML = '<div class="empty-row">No sheds clients</div>';
+      return;
+    }
+    rows.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+    grid.innerHTML = rows.map(function(row) {
+      if (row.error) {
+        return '<div class="mini-card">' +
+          '<div class="mini-name">' + shortName(row.name || row.accountId) + '</div>' +
+          '<div class="mini-error">err</div>' +
+        '</div>';
+      }
+      var cpl = row.costPerResult;
+      var valEl = cpl != null
+        ? '<div class="mini-value">' + fmt$(cpl) + '</div>'
+        : '<div class="mini-value none">—</div>';
+      var sub = (row.results != null)
+        ? row.results + (row.resultType ? ' ' + String(row.resultType).toLowerCase() : ' results')
+        : '—';
+
+      return '<div class="mini-card">' +
+        '<div class="mini-name">' + shortName(row.name) + '</div>' +
+        valEl +
+        '<div class="mini-sub">' + sub + '</div>' +
+      '</div>';
+    }).join('');
+  }).catch(function(e) {
+    if (e.message !== 'Unauthorized') {
+      grid.innerHTML = '<div class="empty-row">Sheds unavailable: ' + e.message + '</div>';
+    }
+  });
+}
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
+
 if (DASH_PASSWORD) {
   fetch('/api/auth/verify', { method: 'POST', headers: { 'x-dash-password': DASH_PASSWORD } })
     .then(function(r) {
-      if (r.ok) { showMenu(); }
-      else { sessionStorage.removeItem('dash_password'); document.getElementById('password').focus(); }
-    }).catch(function() { document.getElementById('password').focus(); });
+      if (r.ok) showLaunchpad();
+      else { sessionStorage.removeItem('dash_password'); showLogin(); }
+    })
+    .catch(function() { showLogin(); });
 } else {
-  // Check if no password required
+  // No password configured = open access
   fetch('/api/auth/verify', { method: 'POST' })
-    .then(function(r) { if (r.ok) showMenu(); })
-    .catch(function() {});
+    .then(function(r) { if (r.ok) showLaunchpad(); else showLogin(); })
+    .catch(function() { showLogin(); });
   document.getElementById('password').focus();
 }
 </script>

@@ -542,5 +542,64 @@ router.get('/cpp-7day', async (req, res) => {
   }
 });
 
+// ─── Sheds CPL proxy ──────────────────────────────────────────────────────────
+// sheds.2by4llc.com has its own codebase + API. The launchpad shows yesterday's
+// CPL per shed client; we proxy through here so the browser only needs the dash
+// password and we can cache to avoid hammering Meta.
+
+const SHEDS_BASE_URL = process.env.SHEDS_BASE_URL || 'https://sheds.2by4llc.com';
+const SHEDS_PASSWORD = process.env.SHEDS_DASH_PASSWORD || process.env.DASH_PASSWORD;
+const SHEDS_CACHE_TTL_MS = 5 * 60 * 1000;
+let shedsCplCache = { key: null, ts: 0, data: null };
+
+router.get('/sheds/cpl-yesterday', async (req, res) => {
+  const yesterday = getYesterdayInTz('America/Chicago');
+  const now = Date.now();
+
+  if (shedsCplCache.data && shedsCplCache.key === yesterday && (now - shedsCplCache.ts) < SHEDS_CACHE_TTL_MS) {
+    return res.json(shedsCplCache.data);
+  }
+
+  const headers = SHEDS_PASSWORD ? { 'X-Dash-Password': SHEDS_PASSWORD } : {};
+
+  try {
+    const clientsRes = await axios.get(`${SHEDS_BASE_URL}/api/clients`, { headers, timeout: 15000 });
+    // Tolerate either { clients: [...] } or [...]
+    const clients = Array.isArray(clientsRes.data) ? clientsRes.data : (clientsRes.data?.clients || []);
+
+    const rows = await Promise.all(clients.map(async (c) => {
+      const accountId = c.accountId || c.fbAdAccountId || c.adAccountId || c.id;
+      const name = c.name || c.clientName || accountId;
+      try {
+        const sumRes = await axios.get(`${SHEDS_BASE_URL}/api/summary`, {
+          headers,
+          params: { accountId, since: yesterday, until: yesterday },
+          timeout: 20000,
+        });
+        const s = sumRes.data || {};
+        return {
+          name,
+          accountId,
+          spend: s.spend ?? null,
+          results: s.results ?? null,
+          costPerResult: s.costPerResult ?? (s.spend && s.results ? s.spend / s.results : null),
+          resultType: s.resultType ?? null,
+        };
+      } catch (err) {
+        return {
+          name,
+          accountId,
+          error: err.response?.data?.error || err.message,
+        };
+      }
+    }));
+
+    shedsCplCache = { key: yesterday, ts: now, data: rows };
+    res.json(rows);
+  } catch (err) {
+    res.status(502).json({ error: `Sheds upstream: ${err.message}` });
+  }
+});
+
 module.exports = router;
 module.exports.runCppSnapshot = runCppSnapshot;
