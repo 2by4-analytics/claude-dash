@@ -209,13 +209,15 @@ async function getClientFolders() {
 
 async function fetchClaudeMd(folderId) {
   const drive = driveApi();
-  // Find CLAUDE.md (case-sensitive name; same casing the user uses)
+  // Drive's `=` operator is case-sensitive; `contains` narrows the result set,
+  // then we match case-insensitively client-side so claude.md / Claude.md /
+  // CLAUDE.md all hit.
   const res = await drive.files.list({
-    q: `'${folderId}' in parents and name = 'CLAUDE.md' and trashed = false`,
+    q: `'${folderId}' in parents and trashed = false and name contains 'CLAUDE'`,
     fields: 'files(id, name, mimeType)',
-    pageSize: 5,
+    pageSize: 50,
   });
-  const file = (res.data.files || [])[0];
+  const file = (res.data.files || []).find(f => /^claude\.md$/i.test(f.name));
   if (!file) return null;
 
   // Google Doc → export as text/plain. Otherwise → download raw bytes.
@@ -336,4 +338,69 @@ async function getOpenTasks() {
   return { tasks, asOf };
 }
 
-module.exports = { getTodayMeetings, getOpenTasks };
+// ─── Debug helper ─────────────────────────────────────────────────────────────
+
+async function debugSnapshot() {
+  const out = {
+    env: {
+      GOOGLE_SERVICE_ACCOUNT_JSON: !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+      GOOGLE_CALENDAR_ID: CALENDAR_ID,
+      STICKER_CLIENTS_FOLDER_ID: STICKER_FOLDER_ID || null,
+      SHED_CLIENTS_FOLDER_ID: SHED_FOLDER_ID || null,
+    },
+    serviceAccountEmail: null,
+    folders: [],
+  };
+
+  try {
+    const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (raw) out.serviceAccountEmail = JSON.parse(raw).client_email || null;
+  } catch { /* ignore */ }
+
+  let folders = [];
+  try {
+    folders = await getClientFolders();
+  } catch (e) {
+    out.foldersError = e.message;
+    return out;
+  }
+
+  const drive = driveApi();
+  for (const folder of folders) {
+    const entry = { id: folder.id, name: folder.name, type: folder.type };
+    try {
+      const res = await drive.files.list({
+        q: `'${folder.id}' in parents and trashed = false and name contains 'CLAUDE'`,
+        fields: 'files(id, name, mimeType)',
+        pageSize: 50,
+      });
+      const matches = (res.data.files || []).map(f => ({ name: f.name, mimeType: f.mimeType, id: f.id }));
+      entry.candidates = matches;
+      const file = matches.find(f => /^claude\.md$/i.test(f.name));
+      if (!file) {
+        entry.claudeMd = null;
+      } else {
+        entry.claudeMd = { id: file.id, name: file.name, mimeType: file.mimeType };
+        try {
+          const content = await fetchClaudeMd(folder.id);
+          entry.contentLength = content ? content.length : 0;
+          // Detect whether the file has any "## Tasks"-ish heading
+          const headings = (content || '').split(/\r?\n/).filter(l => /^##\s/.test(l)).map(l => l.trim());
+          entry.h2Headings = headings;
+          const tasks = parseTasksSection(content || '', folder.name);
+          entry.openTaskCount = tasks.length;
+          entry.firstTask = tasks[0] || null;
+        } catch (e) {
+          entry.readError = e.message;
+        }
+      }
+    } catch (e) {
+      entry.listError = e.message;
+    }
+    out.folders.push(entry);
+  }
+
+  return out;
+}
+
+module.exports = { getTodayMeetings, getOpenTasks, debugSnapshot };

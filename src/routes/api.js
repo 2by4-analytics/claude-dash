@@ -620,5 +620,16 @@ router.get('/today/tasks', async (req, res) => {
   }
 });
 
+// Diagnostic: shows what the SA can see — folder list, CLAUDE.md candidates,
+// detected ## headings, parsed task count. Hit in browser to debug empty results.
+router.get('/today/debug', async (req, res) => {
+  try {
+    const snap = await googleSvc.debugSnapshot();
+    res.json(snap);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 module.exports.runCppSnapshot = runCppSnapshot;
