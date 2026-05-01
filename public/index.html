@@ -4,234 +4,356 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>2by4 Launchpad</title>
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23f8fafc'/><rect x='10' y='10' width='44' height='44' rx='10' fill='none' stroke='%23f59e0b' stroke-width='5'/><rect x='22' y='22' width='20' height='20' rx='3' fill='%230f172a'/></svg>" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0a0a;
-    --surface: #111111;
-    --surface2: #161616;
-    --border: #1e1e1e;
-    --accent: #e8ff00;
-    --accent-dim: rgba(232,255,0,0.08);
-    --accent-mid: rgba(232,255,0,0.3);
-    --text: #f0f0f0;
-    --text-dim: #555;
-    --text-mid: #888;
-    --red: #ff4444;
-    --yellow: #ffaa00;
-    --green: #00ff88;
-    --mono: 'Space Mono', monospace;
-    --sans: 'DM Sans', sans-serif;
+    --navy: #0f172a;
+    --slate: #334155;
+    --slate-2: #64748b;
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.12);
+    --gray: #f8fafc;
+    --ink: #111827;
+    --line: rgba(15, 23, 42, 0.12);
+    --line-soft: rgba(15, 23, 42, 0.06);
+    --shadow-sm: 0 4px 18px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 14px 40px rgba(15, 23, 42, 0.08);
+    --shadow-lg: 0 24px 80px rgba(15, 23, 42, 0.10);
+    --good: #15803d;
+    --good-soft: rgba(21, 128, 61, 0.10);
+    --over: #b91c1c;
+    --over-soft: rgba(185, 28, 28, 0.08);
+    --radius-md: 20px;
+    --radius-sm: 14px;
+    --shell: min(1120px, calc(100vw - 40px));
   }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: "Manrope", sans-serif;
+    line-height: 1.5;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at top left, rgba(245, 158, 11, 0.08), transparent 34%),
+      linear-gradient(180deg, #ffffff 0%, var(--gray) 62%, #eef3fa 100%);
+    background-attachment: fixed;
+  }
   a { color: inherit; text-decoration: none; }
+  button, input { font: inherit; }
 
-  /* ── Login (centered, same vibe as before) ── */
+  /* ── Brand mark (matches 2by4llc.com favicon) ── */
+  .brand-mark {
+    width: 26px; height: 26px;
+    border: 2px solid var(--amber);
+    border-radius: 5px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .brand-mark::after {
+    content: ""; position: absolute; inset: 5px;
+    background: var(--navy); border-radius: 2px;
+  }
+  .brand-mark.lg { width: 36px; height: 36px; border-width: 2.5px; border-radius: 7px; }
+  .brand-mark.lg::after { inset: 7px; border-radius: 3px; }
+
+  /* ── Header ── */
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    background: rgba(248, 250, 252, 0.78);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .header-bar {
+    width: var(--shell);
+    margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; min-height: 80px;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 14px;
+  }
+  .brand-copy { display: grid; gap: 2px; }
+  .brand-copy strong {
+    font-size: 1rem; letter-spacing: 0.01em;
+    color: var(--navy); font-weight: 700;
+  }
+  .brand-copy span:last-child {
+    font-size: 0.78rem;
+    color: rgba(15, 23, 42, 0.65);
+    letter-spacing: 0.04em;
+  }
+  .signout-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--navy);
+    border-radius: 999px;
+    padding: 9px 18px;
+    font-weight: 600; font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 180ms ease, border-color 180ms ease;
+  }
+  .signout-btn:hover { background: rgba(15,23,42,0.04); border-color: rgba(15,23,42,0.2); }
+
+  /* ── Page shell ── */
+  .page { width: var(--shell); margin: 0 auto; padding: 56px 0 96px; }
+
+  /* ── Hero ── */
+  .hero {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 32px; margin-bottom: 56px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .hero h1 {
+    margin: 0;
+    font-family: "Instrument Serif", serif;
+    font-weight: 400;
+    color: var(--navy);
+    letter-spacing: -0.025em;
+    line-height: 0.95;
+    font-size: clamp(3rem, 7vw, 4.6rem);
+  }
+  .hero-date {
+    text-align: right;
+    color: var(--slate);
+    font-weight: 500; font-size: 0.95rem;
+    letter-spacing: 0.01em;
+  }
+  .hero-date strong {
+    display: block;
+    font-family: "Instrument Serif", serif;
+    font-weight: 400; font-style: italic;
+    color: var(--navy);
+    font-size: 1.5rem;
+    margin-top: 4px;
+  }
+
+  /* ── Section ── */
+  section { margin-bottom: 48px; }
+  .section-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; margin-bottom: 18px;
+  }
+  .section-eyebrow {
+    font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--slate);
+  }
+  .section-eyebrow .dim {
+    color: var(--slate-2);
+    font-weight: 600;
+    margin-left: 8px;
+    letter-spacing: 0.12em;
+  }
+  .section-link {
+    font-size: 0.78rem; font-weight: 600;
+    color: var(--slate);
+    letter-spacing: 0.04em;
+    transition: color 180ms ease;
+  }
+  .section-link:hover { color: var(--amber); }
+
+  /* ── Today (Phase 2 placeholders) ── */
+  .today-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  .today-block {
+    background: #fff;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-md);
+    padding: 24px 26px; min-height: 130px;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .today-label {
+    font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--slate-2);
+  }
+  .today-content {
+    font-family: "Instrument Serif", serif;
+    font-weight: 400; font-style: italic;
+    color: var(--slate-2);
+    font-size: 1.6rem;
+  }
+
+  /* ── Mini cards (CPP / CPL) ── */
+  .mini-cards {
+    display: flex; flex-wrap: wrap; gap: 12px;
+  }
+  .mini-card {
+    background: #fff;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 16px 16px 14px;
+    width: 150px;
+    display: flex; flex-direction: column; gap: 8px;
+    box-shadow: var(--shadow-sm);
+    transition: transform 180ms ease, box-shadow 180ms ease;
+  }
+  .mini-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .mini-card.good { border-color: rgba(21, 128, 61, 0.25); background: linear-gradient(180deg, var(--good-soft), #fff 65%); }
+  .mini-card.over { border-color: rgba(185, 28, 28, 0.25); background: linear-gradient(180deg, var(--over-soft), #fff 65%); }
+
+  .mini-name {
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--slate);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mini-value {
+    font-family: "Instrument Serif", serif;
+    font-weight: 400;
+    font-size: 2.1rem; line-height: 1;
+    color: var(--navy);
+    font-variant-numeric: tabular-nums;
+  }
+  .mini-value.good { color: var(--good); }
+  .mini-value.over { color: var(--over); }
+  .mini-value.none { color: var(--slate-2); font-size: 1.4rem; }
+
+  .mini-sub {
+    font-size: 0.74rem;
+    color: var(--slate-2);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .mini-sub-loading { opacity: 0.5; animation: pulse 1.4s ease-in-out infinite; }
+  .mini-error {
+    font-size: 0.74rem; color: var(--over); font-weight: 600;
+  }
+  .mini-skel {
+    background: #fff; border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    width: 150px; height: 110px;
+    box-shadow: var(--shadow-sm);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .empty-row {
+    font-size: 0.85rem; color: var(--slate-2);
+    padding: 12px 4px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.55; }
+    50%       { opacity: 0.85; }
+  }
+
+  /* ── Tools ── */
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .tool-btn {
+    background: #fff;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 18px 22px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    box-shadow: var(--shadow-sm);
+    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+  .tool-btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--amber);
+    box-shadow: var(--shadow-md);
+  }
+  .tool-btn-label {
+    font-weight: 700; font-size: 0.95rem; color: var(--navy);
+  }
+  .tool-btn-arrow {
+    font-weight: 700; font-size: 1rem;
+    color: var(--slate-2);
+    transition: color 180ms ease, transform 180ms ease;
+  }
+  .tool-btn:hover .tool-btn-arrow { color: var(--amber); transform: translateX(2px); }
+
+  /* ── Clients placeholder ── */
+  .clients-placeholder {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    color: var(--slate-2);
+    font-size: 1.3rem;
+    padding: 8px 0 4px;
+  }
+
+  /* ── Login ── */
   .login-wrap {
     min-height: 100vh;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     padding: 40px 24px;
+    gap: 24px;
   }
-  .login-logo {
-    font-family: var(--mono);
-    font-size: 13px; font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.08em;
-    margin-bottom: 48px;
+  .login-brand {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    margin-bottom: 12px;
   }
-  .login-logo span { color: var(--text-dim); font-weight: 400; }
-  #login-section {
-    width: 100%; max-width: 300px;
-    display: flex; flex-direction: column; gap: 10px;
+  .login-brand h1 {
+    margin: 0;
+    font-family: "Instrument Serif", serif;
+    font-weight: 400;
+    font-size: 2.6rem;
+    color: var(--navy);
+    letter-spacing: -0.02em;
   }
-  .input {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 13px; padding: 11px 14px;
-    outline: none; width: 100%;
-    transition: border-color 0.15s;
-  }
-  .input:focus { border-color: var(--accent); }
-  .input::placeholder { color: var(--text-dim); }
-  .login-btn {
-    background: var(--accent); border: none; color: var(--bg);
-    font-family: var(--mono); font-size: 12px; font-weight: 700;
-    padding: 11px; cursor: pointer; letter-spacing: 0.06em;
-    transition: opacity 0.15s; width: 100%;
-  }
-  .login-btn:hover { opacity: 0.85; }
-  .login-error {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--red); display: none;
-  }
-
-  /* ── Page ── */
-  .page { max-width: 1100px; margin: 0 auto; padding: 32px 32px 80px; }
-
-  .page-header {
-    display: flex; align-items: baseline; justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 18px; margin-bottom: 36px;
-  }
-  .page-logo {
-    font-family: var(--mono); font-size: 14px; font-weight: 700;
-    color: var(--accent); letter-spacing: 0.12em;
-  }
-  .page-logo span { color: var(--text-dim); font-weight: 400; margin-left: 6px; }
-  .signout-btn {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--text-dim); background: none; border: none;
-    cursor: pointer; letter-spacing: 0.08em;
-    text-transform: uppercase; transition: color 0.15s;
-  }
-  .signout-btn:hover { color: var(--text); }
-
-  /* ── Section header ── */
-  section { margin-bottom: 40px; }
-  .section-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    margin-bottom: 14px;
-  }
-  .section-title {
-    font-family: var(--mono);
-    font-size: 11px; color: var(--text-mid);
-    letter-spacing: 0.18em; text-transform: uppercase;
-  }
-  .section-title span { color: var(--text-dim); }
-  .section-meta {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--text-dim); letter-spacing: 0.1em;
+  .login-brand p {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--slate-2);
+    letter-spacing: 0.06em;
     text-transform: uppercase;
+    font-weight: 600;
   }
-  .section-link {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--text-dim); letter-spacing: 0.1em;
-    text-transform: uppercase; transition: color 0.15s;
-  }
-  .section-link:hover { color: var(--accent); }
-
-  /* ── TODAY (Phase 2 placeholders) ── */
-  .today-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-  }
-  .today-block {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 22px 24px; min-height: 120px;
+  #login-section {
+    width: 100%; max-width: 320px;
     display: flex; flex-direction: column; gap: 12px;
   }
-  .today-label {
-    font-family: var(--mono); font-size: 9px;
-    color: var(--text-dim); letter-spacing: 0.15em;
-    text-transform: uppercase;
+  .input {
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--navy);
+    border-radius: 999px;
+    font-size: 0.95rem;
+    padding: 14px 20px;
+    outline: none; width: 100%;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
   }
-  .today-content {
-    font-family: var(--mono); font-size: 18px;
-    color: var(--text-dim); letter-spacing: 0.05em;
+  .input::placeholder { color: var(--slate-2); }
+  .input:focus { border-color: var(--amber); box-shadow: 0 0 0 4px var(--amber-soft); }
+  .login-btn {
+    background: var(--navy);
+    border: none; color: #fff;
+    border-radius: 999px;
+    padding: 14px;
+    font-weight: 700; font-size: 0.9rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
+    transition: background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
   }
-
-  /* ── Compact CPP / CPL cards (~120px wide) ── */
-  .mini-cards {
-    display: flex; flex-wrap: wrap; gap: 10px;
-  }
-  .mini-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 14px 14px 12px;
-    width: 130px;
-    display: flex; flex-direction: column;
-    gap: 6px;
-  }
-  .mini-card.good { border-color: rgba(0,255,136,0.18); }
-  .mini-card.over { border-color: rgba(255,68,68,0.18); }
-
-  .mini-name {
-    font-family: var(--mono); font-size: 9.5px;
-    color: var(--text-mid); letter-spacing: 0.06em;
-    text-transform: uppercase;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .mini-value {
-    font-family: var(--mono); font-size: 22px;
-    font-weight: 700; line-height: 1;
-    color: var(--text);
-  }
-  .mini-value.good { color: var(--green); }
-  .mini-value.over { color: var(--red); }
-  .mini-value.none { color: var(--text-dim); font-size: 16px; font-weight: 400; }
-
-  .mini-sub {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--text-dim); letter-spacing: 0.04em;
-    margin-top: 2px;
-  }
-  .mini-sub-loading { animation: fade 1.2s ease-in-out infinite; }
-  .mini-error {
-    font-family: var(--mono); font-size: 10px; color: var(--red);
+  .login-btn:hover { background: #16203a; transform: translateY(-1px); box-shadow: 0 18px 38px rgba(15, 23, 42, 0.24); }
+  .login-error {
+    font-size: 0.8rem; color: var(--over);
+    text-align: center; display: none;
   }
 
-  .mini-skel {
-    background: var(--surface); border: 1px solid var(--border);
-    width: 130px; height: 96px;
-    animation: fade 1.2s ease-in-out infinite;
-  }
-  .empty-row {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--text-dim); padding: 16px 0;
-  }
-
-  @keyframes fade {
-    0%, 100% { opacity: 0.3; }
-    50%       { opacity: 0.7; }
-  }
-
-  /* ── TOOLS ── */
-  .tool-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-  }
-  .tool-btn {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 16px 18px;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px;
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .tool-btn:hover {
-    border-color: var(--accent-mid);
-    background: var(--accent-dim);
-  }
-  .tool-btn-label {
-    font-family: var(--sans); font-size: 13px; font-weight: 500;
-    color: var(--text);
-  }
-  .tool-btn-arrow {
-    font-family: var(--mono); font-size: 13px;
-    color: var(--text-dim);
-    transition: color 0.15s;
-  }
-  .tool-btn:hover .tool-btn-arrow { color: var(--accent); }
-
-  /* ── CLIENTS (Phase 3) ── */
-  .clients-placeholder {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--text-dim); letter-spacing: 0.05em;
-    padding: 16px 0;
-  }
-
-  @media (max-width: 600px) {
-    .page { padding: 24px 16px 60px; }
+  @media (max-width: 640px) {
+    .header-bar { min-height: 68px; }
+    .page { padding: 36px 0 64px; }
+    .hero { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .hero-date { text-align: left; }
     .today-grid { grid-template-columns: 1fr; }
-    .mini-card, .mini-skel { width: calc(50% - 5px); }
+    .mini-card, .mini-skel { width: calc(50% - 6px); }
     .tool-grid { grid-template-columns: 1fr; }
   }
 </style>
@@ -240,109 +362,131 @@
 
 <!-- ─── LOGIN ─── -->
 <div class="login-wrap" id="login-wrap">
-  <div class="login-logo">2×4 <span>LAUNCHPAD</span></div>
+  <div class="login-brand">
+    <span class="brand-mark lg" aria-hidden="true"></span>
+    <h1>Launchpad</h1>
+    <p>2by4 LLC</p>
+  </div>
   <div id="login-section">
     <input class="input" id="password" type="password" placeholder="Password"
       onkeydown="if(event.key==='Enter') doLogin()">
     <div class="login-error" id="login-error">Incorrect password</div>
-    <button class="login-btn" onclick="doLogin()">SIGN IN</button>
+    <button class="login-btn" onclick="doLogin()">Sign in</button>
   </div>
 </div>
 
 <!-- ─── LAUNCHPAD ─── -->
-<div class="page" id="page" style="display:none;">
+<div id="page" style="display:none;">
 
-  <header class="page-header">
-    <div class="page-logo">2×4 <span>LAUNCHPAD</span></div>
-    <button class="signout-btn" onclick="signOut()">Sign out</button>
+  <header class="site-header">
+    <div class="header-bar">
+      <a class="brand" href="/" aria-label="2by4 LLC home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-copy">
+          <strong>2by4 LLC</strong>
+          <span>Launchpad</span>
+        </span>
+      </a>
+      <button class="signout-btn" onclick="signOut()">Sign out</button>
+    </div>
   </header>
 
-  <!--
-    Phase 2: TODAY — Google Calendar (meetings) + per-client CLAUDE.md task
-    parsing from Google Drive (tasks). Placeholder for now.
-  -->
-  <section>
-    <div class="section-head">
-      <div class="section-title">Today</div>
-      <div class="section-meta" id="today-date">—</div>
-    </div>
-    <div class="today-grid">
-      <div class="today-block">
-        <div class="today-label">Meetings</div>
-        <div class="today-content">—</div>
-      </div>
-      <div class="today-block">
-        <div class="today-label">Tasks</div>
-        <div class="today-content">—</div>
+  <main class="page">
+
+    <div class="hero">
+      <h1>Launchpad</h1>
+      <div class="hero-date">
+        Today
+        <strong id="today-date">—</strong>
       </div>
     </div>
-  </section>
 
-  <!-- STICKER · yesterday CPP -->
-  <section>
-    <div class="section-head">
-      <div class="section-title">Sticker <span>· yesterday CPP</span></div>
-      <a class="section-link" href="/cpp-daily.html">CPP Daily →</a>
-    </div>
-    <div class="mini-cards" id="sticker-cards">
-      <div class="mini-skel"></div>
-      <div class="mini-skel"></div>
-      <div class="mini-skel"></div>
-      <div class="mini-skel"></div>
-    </div>
-  </section>
+    <!--
+      Phase 2: TODAY — Google Calendar (meetings) + per-client CLAUDE.md task
+      parsing from Google Drive (tasks). Placeholder for now.
+    -->
+    <section>
+      <div class="section-head">
+        <div class="section-eyebrow">Today</div>
+      </div>
+      <div class="today-grid">
+        <div class="today-block">
+          <div class="today-label">Meetings</div>
+          <div class="today-content">—</div>
+        </div>
+        <div class="today-block">
+          <div class="today-label">Tasks</div>
+          <div class="today-content">—</div>
+        </div>
+      </div>
+    </section>
 
-  <!-- SHEDS · yesterday CPL (proxied through /api/sheds/cpl-yesterday) -->
-  <section>
-    <div class="section-head">
-      <div class="section-title">Sheds <span>· yesterday CPL</span></div>
-      <a class="section-link" href="https://sheds.2by4llc.com" target="_blank" rel="noopener">Sheds →</a>
-    </div>
-    <div class="mini-cards" id="sheds-cards">
-      <div class="mini-skel"></div>
-      <div class="mini-skel"></div>
-    </div>
-  </section>
+    <!-- STICKER · yesterday CPP -->
+    <section>
+      <div class="section-head">
+        <div class="section-eyebrow">Sticker <span class="dim">· yesterday CPP</span></div>
+        <a class="section-link" href="/cpp-daily.html">CPP Daily →</a>
+      </div>
+      <div class="mini-cards" id="sticker-cards">
+        <div class="mini-skel"></div>
+        <div class="mini-skel"></div>
+        <div class="mini-skel"></div>
+        <div class="mini-skel"></div>
+      </div>
+    </section>
 
-  <!-- TOOLS -->
-  <section>
-    <div class="section-head">
-      <div class="section-title">Tools</div>
-    </div>
-    <div class="tool-grid">
-      <a class="tool-btn" href="/dash">
-        <span class="tool-btn-label">Media Dashboard</span>
-        <span class="tool-btn-arrow">→</span>
-      </a>
-      <a class="tool-btn" href="/cpp-daily.html">
-        <span class="tool-btn-label">CPP Daily</span>
-        <span class="tool-btn-arrow">→</span>
-      </a>
-      <a class="tool-btn" href="https://sheds.2by4llc.com" target="_blank" rel="noopener">
-        <span class="tool-btn-label">Sheds Meta Ads</span>
-        <span class="tool-btn-arrow">↗</span>
-      </a>
-      <a class="tool-btn" href="https://brain.2by4llc.com" target="_blank" rel="noopener">
-        <span class="tool-btn-label">Brain</span>
-        <span class="tool-btn-arrow">↗</span>
-      </a>
-      <a class="tool-btn" href="/admin.html">
-        <span class="tool-btn-label">Admin</span>
-        <span class="tool-btn-arrow">→</span>
-      </a>
-    </div>
-  </section>
+    <!-- SHEDS · yesterday CPL (proxied through /api/sheds/cpl-yesterday) -->
+    <section>
+      <div class="section-head">
+        <div class="section-eyebrow">Sheds <span class="dim">· yesterday CPL</span></div>
+        <a class="section-link" href="https://sheds.2by4llc.com" target="_blank" rel="noopener">Sheds →</a>
+      </div>
+      <div class="mini-cards" id="sheds-cards">
+        <div class="mini-skel"></div>
+        <div class="mini-skel"></div>
+      </div>
+    </section>
 
-  <!--
-    Phase 3: CLIENTS — per-client cards/index. Placeholder for now.
-  -->
-  <section>
-    <div class="section-head">
-      <div class="section-title">Clients</div>
-    </div>
-    <div class="clients-placeholder">—</div>
-  </section>
+    <!-- TOOLS -->
+    <section>
+      <div class="section-head">
+        <div class="section-eyebrow">Tools</div>
+      </div>
+      <div class="tool-grid">
+        <a class="tool-btn" href="/dash">
+          <span class="tool-btn-label">Media Dashboard</span>
+          <span class="tool-btn-arrow">→</span>
+        </a>
+        <a class="tool-btn" href="/cpp-daily.html">
+          <span class="tool-btn-label">CPP Daily</span>
+          <span class="tool-btn-arrow">→</span>
+        </a>
+        <a class="tool-btn" href="https://sheds.2by4llc.com" target="_blank" rel="noopener">
+          <span class="tool-btn-label">Sheds Meta Ads</span>
+          <span class="tool-btn-arrow">↗</span>
+        </a>
+        <a class="tool-btn" href="https://brain.2by4llc.com" target="_blank" rel="noopener">
+          <span class="tool-btn-label">Brain</span>
+          <span class="tool-btn-arrow">↗</span>
+        </a>
+        <a class="tool-btn" href="/admin.html">
+          <span class="tool-btn-label">Admin</span>
+          <span class="tool-btn-arrow">→</span>
+        </a>
+      </div>
+    </section>
 
+    <!--
+      Phase 3: CLIENTS — per-client cards/index. Placeholder for now.
+    -->
+    <section>
+      <div class="section-head">
+        <div class="section-eyebrow">Clients</div>
+      </div>
+      <div class="clients-placeholder">—</div>
+    </section>
+
+  </main>
 </div>
 
 <script>
@@ -407,12 +551,11 @@ function fmt$(n) {
 function renderDate() {
   var d = new Date();
   document.getElementById('today-date').textContent =
-    d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 function shortName(n) {
   if (!n) return '';
-  // Strip common prefixes/suffixes for compactness
   return n.replace(/\s*\([^)]*\)\s*/g, '').trim();
 }
 
@@ -443,12 +586,11 @@ function loadSticker() {
         '<div class="mini-name">' + shortName(row.name) + '</div>' +
         valEl +
         '<div class="mini-sub" id="sticker-7d-' + row.id + '">' +
-          '<span class="mini-sub-loading">7d ...</span>' +
+          '<span class="mini-sub-loading">7d ···</span>' +
         '</div>' +
       '</div>';
     }).join('') || '<div class="empty-row">No sticker clients</div>';
 
-    // 7-day averages load separately
     apiFetch('/api/cpp-7day').then(function(weekRows) {
       weekRows.forEach(function(w) {
         var el = document.getElementById('sticker-7d-' + w.id);
@@ -521,7 +663,6 @@ if (DASH_PASSWORD) {
     })
     .catch(function() { showLogin(); });
 } else {
-  // No password configured = open access
   fetch('/api/auth/verify', { method: 'POST' })
     .then(function(r) { if (r.ok) showLaunchpad(); else showLogin(); })
     .catch(function() { showLogin(); });
