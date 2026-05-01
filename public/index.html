@@ -182,6 +182,99 @@
     color: var(--slate-2);
     font-size: 1.6rem;
   }
+  .today-list {
+    display: flex; flex-direction: column;
+    margin-top: 2px;
+  }
+  .today-empty {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    color: var(--slate-2);
+    font-size: 1.3rem;
+    padding-top: 4px;
+  }
+  .today-loading {
+    font-size: 0.78rem;
+    color: var(--slate-2);
+    letter-spacing: 0.04em;
+    padding-top: 4px;
+    animation: pulseFade 1.4s ease-in-out infinite;
+  }
+  @keyframes pulseFade {
+    0%, 100% { opacity: 0.45; }
+    50%       { opacity: 0.8; }
+  }
+  .today-error {
+    font-size: 0.78rem;
+    color: var(--over);
+    letter-spacing: 0.02em;
+    padding-top: 4px;
+  }
+  .meeting-row, .task-row {
+    display: flex; align-items: baseline;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line-soft);
+    font-size: 0.92rem;
+  }
+  .meeting-row:first-child, .task-row:first-child { border-top: none; padding-top: 0; }
+  .meeting-row:last-child, .task-row:last-child { padding-bottom: 0; }
+  .meeting-time {
+    color: var(--slate);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
+    min-width: 64px;
+    flex-shrink: 0;
+  }
+  .meeting-title {
+    color: var(--navy);
+    font-weight: 600;
+    flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  a.meeting-title { color: var(--navy); transition: color 180ms ease; }
+  a.meeting-title:hover { color: var(--amber); }
+  .meeting-client, .task-client {
+    color: var(--slate-2);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .task-check {
+    color: var(--slate-2);
+    font-family: "Manrope", sans-serif;
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .task-text {
+    color: var(--navy);
+    flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .task-urgent {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--over-soft);
+    color: var(--over);
+    font-size: 0.65rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    vertical-align: middle;
+  }
+  .due-chip {
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .due-chip.over { background: var(--over-soft); color: var(--over); }
+  .due-chip.today { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+  .due-chip.future { background: rgba(15, 23, 42, 0.06); color: var(--slate-2); }
 
   /* ── Mini cards (CPP / CPL) ── */
   .mini-cards {
@@ -401,10 +494,7 @@
       </div>
     </div>
 
-    <!--
-      Phase 2: TODAY — Google Calendar (meetings) + per-client CLAUDE.md task
-      parsing from Google Drive (tasks). Placeholder for now.
-    -->
+    <!-- TODAY: Google Calendar (meetings) + per-client CLAUDE.md tasks -->
     <section>
       <div class="section-head">
         <div class="section-eyebrow">Today</div>
@@ -412,11 +502,11 @@
       <div class="today-grid">
         <div class="today-block">
           <div class="today-label">Meetings</div>
-          <div class="today-content">—</div>
+          <div id="today-meetings" class="today-loading">Loading…</div>
         </div>
         <div class="today-block">
           <div class="today-label">Tasks</div>
-          <div class="today-content">—</div>
+          <div id="today-tasks" class="today-loading">Loading…</div>
         </div>
       </div>
     </section>
@@ -533,6 +623,8 @@ function showLaunchpad() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('page').style.display = 'block';
   renderDate();
+  loadMeetings();
+  loadTasks();
   loadSticker();
   loadSheds();
 }
@@ -553,6 +645,122 @@ function renderDate() {
 function shortName(n) {
   if (!n) return '';
   return n.replace(/\s*\([^)]*\)\s*/g, '').trim();
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'})[c];
+  });
+}
+
+function fmtTime(iso) {
+  if (!iso) return '';
+  // All-day events come through as YYYY-MM-DD without time
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'all day';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  var s = d.toLocaleTimeString('en-US', {
+    timeZone: 'America/Chicago',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+  // "9:30 AM" → "9:30am"
+  return s.replace(' AM', 'am').replace(' PM', 'pm');
+}
+
+function fmtDueChip(dueDate) {
+  if (!dueDate) return '';
+  // dueDate is YYYY-MM-DD; show "Mon DD"
+  var parts = dueDate.split('-');
+  if (parts.length !== 3) return dueDate;
+  var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ─── Today: Meetings ─────────────────────────────────────────────────────────
+
+function loadMeetings() {
+  var el = document.getElementById('today-meetings');
+  apiFetch('/api/today/meetings').then(function(data) {
+    var list = (data && data.meetings) || [];
+    if (!list.length) {
+      el.className = 'today-empty';
+      el.textContent = 'No meetings today';
+      return;
+    }
+    el.className = 'today-list';
+    el.innerHTML = list.map(function(m) {
+      var time = fmtTime(m.start);
+      var titleHtml = m.hangoutLink
+        ? '<a class="meeting-title" href="' + escapeHtml(m.hangoutLink) + '" target="_blank" rel="noopener">' + escapeHtml(m.title) + '</a>'
+        : '<span class="meeting-title">' + escapeHtml(m.title) + '</span>';
+      var clientHtml = m.client ? '<span class="meeting-client">' + escapeHtml(m.client) + '</span>' : '';
+      return '<div class="meeting-row">' +
+        '<span class="meeting-time">' + escapeHtml(time) + '</span>' +
+        titleHtml +
+        clientHtml +
+      '</div>';
+    }).join('');
+  }).catch(function(e) {
+    if (e.message === 'Unauthorized') return;
+    el.className = 'today-error';
+    el.textContent = e.message || 'Failed to load meetings';
+  });
+}
+
+// ─── Today: Tasks ────────────────────────────────────────────────────────────
+
+function rankTask(t) {
+  // 0 = overdue (older first via dueDate asc), 1 = today, 2 = future (soonest first), 3 = no due
+  if (t.isOverdue) return 0;
+  if (t.isDueToday) return 1;
+  if (t.dueDate) return 2;
+  return 3;
+}
+
+function sortTasks(tasks) {
+  return tasks.slice().sort(function(a, b) {
+    var ra = rankTask(a), rb = rankTask(b);
+    if (ra !== rb) return ra - rb;
+    // Within bucket: by dueDate ascending if present
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    // No due dates → alphabetical fallback
+    return (a.line || '').localeCompare(b.line || '');
+  });
+}
+
+function loadTasks() {
+  var el = document.getElementById('today-tasks');
+  apiFetch('/api/today/tasks').then(function(data) {
+    var tasks = sortTasks((data && data.tasks) || []);
+    if (!tasks.length) {
+      el.className = 'today-empty';
+      el.textContent = 'No open tasks';
+      return;
+    }
+    el.className = 'today-list';
+    el.innerHTML = tasks.map(function(t) {
+      var chip = '';
+      if (t.dueDate) {
+        var cls = t.isOverdue ? 'over' : (t.isDueToday ? 'today' : 'future');
+        chip = '<span class="due-chip ' + cls + '">' + escapeHtml(fmtDueChip(t.dueDate)) + '</span>';
+      }
+      var urgent = t.urgent ? '<span class="task-urgent">!!</span>' : '';
+      var clientHtml = t.client ? '<span class="task-client">' + escapeHtml(t.client) + '</span>' : '';
+      return '<div class="task-row">' +
+        '<span class="task-check">□</span>' +
+        '<span class="task-text">' + urgent + escapeHtml(t.line) + '</span>' +
+        clientHtml +
+        chip +
+      '</div>';
+    }).join('');
+  }).catch(function(e) {
+    if (e.message === 'Unauthorized') return;
+    el.className = 'today-error';
+    el.textContent = e.message || 'Failed to load tasks';
+  });
 }
 
 // ─── Sticker (yesterday CPP + 7-day avg) ─────────────────────────────────────

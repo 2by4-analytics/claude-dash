@@ -5,6 +5,7 @@ const { getClients, getClientById, getClientTimezone } = require('../services/co
 const { getFbHierarchy } = require('../services/fb');
 const { getCocHierarchy, getCocCampaignTotals } = require('../services/coc');
 const { mergeHierarchy } = require('../services/merger');
+const googleSvc = require('../services/google');
 
 // GET /api/clients
 router.get('/clients', (req, res) => {
@@ -594,6 +595,28 @@ router.get('/sheds/cpl-yesterday', async (req, res) => {
   } catch (err) {
     const upstreamMsg = err.response?.data?.error || err.message;
     res.status(502).json({ error: `Sheds upstream: ${upstreamMsg}` });
+  }
+});
+
+// ─── TODAY: Google Calendar + Drive (Phase 2 of the launchpad) ───────────────
+
+router.get('/today/meetings', async (req, res) => {
+  try {
+    const meetings = await googleSvc.getTodayMeetings();
+    res.json({ meetings, asOf: new Date().toISOString() });
+  } catch (err) {
+    console.error('[today/meetings]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/today/tasks', async (req, res) => {
+  try {
+    const { tasks, asOf } = await googleSvc.getOpenTasks();
+    res.json({ tasks, asOf });
+  } catch (err) {
+    console.error('[today/tasks]', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
