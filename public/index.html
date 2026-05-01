@@ -276,6 +276,79 @@
   .due-chip.today { background: rgba(245, 158, 11, 0.14); color: #b45309; }
   .due-chip.future { background: rgba(15, 23, 42, 0.06); color: var(--slate-2); }
 
+  /* ── Grouped task list ── */
+  .task-type-head {
+    font-size: 0.65rem; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--slate-2);
+    padding: 12px 0 6px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .task-type-head:first-child { border-top: none; padding-top: 4px; }
+
+  details.task-client {
+    border-top: 1px solid var(--line-soft);
+  }
+  details.task-client:first-of-type { border-top: none; }
+  details.task-client[open] {
+    background: rgba(15, 23, 42, 0.02);
+  }
+  details.task-client > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 9px 4px;
+    display: flex; align-items: center; gap: 10px;
+    user-select: none;
+    transition: background 140ms ease;
+  }
+  details.task-client > summary::-webkit-details-marker { display: none; }
+  details.task-client > summary:hover { background: rgba(245, 158, 11, 0.06); }
+
+  .task-client-chev {
+    color: var(--slate-2);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    transition: transform 180ms ease, color 180ms ease;
+  }
+  details.task-client[open] > summary .task-client-chev { transform: rotate(90deg); color: var(--navy); }
+  details.task-client > summary:hover .task-client-chev { color: var(--amber); }
+
+  .task-client-name {
+    color: var(--navy);
+    font-weight: 700;
+    font-size: 0.92rem;
+    flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .task-client-count {
+    padding: 1px 9px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--slate-2);
+    font-size: 0.72rem; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .task-client-count.over  { background: var(--over-soft);  color: var(--over); }
+  .task-client-count.today { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+
+  .task-list-inner {
+    padding: 4px 4px 12px 26px;
+    display: flex; flex-direction: column;
+  }
+  .task-list-inner .task-row {
+    border-top: none;
+    padding: 6px 0;
+    font-size: 0.88rem;
+    white-space: normal;
+  }
+  .task-list-inner .task-text {
+    white-space: normal;
+    overflow: visible; text-overflow: clip;
+    line-height: 1.35;
+  }
+  .task-list-inner .task-row .task-client { display: none; } /* redundant inside its own group */
+
   /* ── Mini cards (CPP / CPL) ── */
   .mini-cards {
     display: flex; flex-wrap: wrap; gap: 12px;
@@ -737,31 +810,102 @@ function sortTasks(tasks) {
   });
 }
 
+function renderTaskRow(t) {
+  var chip = '';
+  if (t.dueDate) {
+    var cls = t.isOverdue ? 'over' : (t.isDueToday ? 'today' : 'future');
+    chip = '<span class="due-chip ' + cls + '">' + escapeHtml(fmtDueChip(t.dueDate)) + '</span>';
+  }
+  var urgent = t.urgent ? '<span class="task-urgent">!!</span>' : '';
+  return '<div class="task-row">' +
+    '<span class="task-check">□</span>' +
+    '<span class="task-text">' + urgent + escapeHtml(t.line) + '</span>' +
+    chip +
+  '</div>';
+}
+
+function clientGroupSummary(tasks) {
+  // Worst-case status across this client's tasks
+  var hasOverdue = false, hasToday = false;
+  for (var i = 0; i < tasks.length; i++) {
+    if (tasks[i].isOverdue) hasOverdue = true;
+    else if (tasks[i].isDueToday) hasToday = true;
+  }
+  return { hasOverdue: hasOverdue, hasToday: hasToday };
+}
+
+function rankClientGroup(tasks) {
+  // 0 = has overdue, 1 = has today, 2 = neither
+  var s = clientGroupSummary(tasks);
+  if (s.hasOverdue) return 0;
+  if (s.hasToday) return 1;
+  return 2;
+}
+
 function loadTasks() {
   var el = document.getElementById('today-tasks');
   apiFetch('/api/today/tasks').then(function(data) {
-    var tasks = sortTasks((data && data.tasks) || []);
+    var tasks = (data && data.tasks) || [];
     if (!tasks.length) {
       el.className = 'today-empty';
       el.textContent = 'No open tasks';
       return;
     }
-    el.className = 'today-list';
-    el.innerHTML = tasks.map(function(t) {
-      var chip = '';
-      if (t.dueDate) {
-        var cls = t.isOverdue ? 'over' : (t.isDueToday ? 'today' : 'future');
-        chip = '<span class="due-chip ' + cls + '">' + escapeHtml(fmtDueChip(t.dueDate)) + '</span>';
+
+    // Group: type → client → tasks (sorted)
+    var byType = { sticker: {}, shed: {} };
+    tasks.forEach(function(t) {
+      var type = (t.clientType === 'sticker' || t.clientType === 'shed') ? t.clientType : 'sticker';
+      var client = t.client || '(unknown)';
+      if (!byType[type][client]) byType[type][client] = [];
+      byType[type][client].push(t);
+    });
+    Object.keys(byType).forEach(function(type) {
+      Object.keys(byType[type]).forEach(function(client) {
+        byType[type][client] = sortTasks(byType[type][client]);
+      });
+    });
+
+    var typesWithTasks = ['sticker', 'shed'].filter(function(t) {
+      return Object.keys(byType[t]).length > 0;
+    });
+    var showTypeHeads = typesWithTasks.length > 1;
+
+    var html = '';
+    typesWithTasks.forEach(function(type) {
+      if (showTypeHeads) {
+        var label = type === 'sticker' ? 'Sticker' : 'Sheds';
+        html += '<div class="task-type-head">' + label + '</div>';
       }
-      var urgent = t.urgent ? '<span class="task-urgent">!!</span>' : '';
-      var clientHtml = t.client ? '<span class="task-client">' + escapeHtml(t.client) + '</span>' : '';
-      return '<div class="task-row">' +
-        '<span class="task-check">□</span>' +
-        '<span class="task-text">' + urgent + escapeHtml(t.line) + '</span>' +
-        clientHtml +
-        chip +
-      '</div>';
-    }).join('');
+
+      var clientNames = Object.keys(byType[type]).sort(function(a, b) {
+        var ra = rankClientGroup(byType[type][a]);
+        var rb = rankClientGroup(byType[type][b]);
+        if (ra !== rb) return ra - rb;
+        return a.localeCompare(b);
+      });
+
+      clientNames.forEach(function(name) {
+        var clientTasks = byType[type][name];
+        var summary = clientGroupSummary(clientTasks);
+        var openByDefault = summary.hasOverdue || summary.hasToday;
+        var countCls = summary.hasOverdue ? 'over' : (summary.hasToday ? 'today' : '');
+
+        html += '<details class="task-client"' + (openByDefault ? ' open' : '') + '>' +
+          '<summary>' +
+            '<span class="task-client-chev">▸</span>' +
+            '<span class="task-client-name">' + escapeHtml(name) + '</span>' +
+            '<span class="task-client-count ' + countCls + '">' + clientTasks.length + '</span>' +
+          '</summary>' +
+          '<div class="task-list-inner">' +
+            clientTasks.map(renderTaskRow).join('') +
+          '</div>' +
+        '</details>';
+      });
+    });
+
+    el.className = 'today-list';
+    el.innerHTML = html;
   }).catch(function(e) {
     if (e.message === 'Unauthorized') return;
     el.className = 'today-error';

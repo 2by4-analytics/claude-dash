@@ -333,7 +333,10 @@ async function getOpenTasks() {
     }
     if (!content) continue;
     const parsed = parseTasksSection(content, folder.name);
-    for (const t of parsed) tasks.push(t);
+    for (const t of parsed) {
+      t.clientType = folder.type; // 'sticker' | 'shed' — for grouping in UI
+      tasks.push(t);
+    }
   }
 
   const asOf = new Date().toISOString();
