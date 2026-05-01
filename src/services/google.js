@@ -289,6 +289,9 @@ function parseTaskLine(rawLine, client) {
   };
 }
 
+// Accept any of these as a task-bearing section heading.
+const TASK_HEADING_RE = /^(tasks|open items|todo|to do|action items|to-do)\s*$/i;
+
 function parseTasksSection(content, client) {
   if (!content) return [];
   const lines = content.split(/\r?\n/);
@@ -297,7 +300,7 @@ function parseTasksSection(content, client) {
   for (const line of lines) {
     const heading = line.match(/^##\s+(.+?)\s*$/);
     if (heading) {
-      inSection = /^tasks\s*$/i.test(heading[1]);
+      inSection = TASK_HEADING_RE.test(heading[1]);
       continue;
     }
     if (!inSection) continue;
@@ -340,6 +343,25 @@ async function getOpenTasks() {
 
 // ─── Debug helper ─────────────────────────────────────────────────────────────
 
+// Pull the raw lines under a recognized task heading — for diagnosing why
+// parseTasksSection returned 0 (heading wrong, no checkboxes, all completed, etc).
+function extractTaskSectionLines(content) {
+  if (!content) return null;
+  const lines = content.split(/\r?\n/);
+  const sections = {};
+  let current = null;
+  for (const line of lines) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      current = TASK_HEADING_RE.test(heading[1]) ? heading[1].trim() : null;
+      if (current) sections[current] = [];
+      continue;
+    }
+    if (current) sections[current].push(line);
+  }
+  return Object.keys(sections).length ? sections : null;
+}
+
 async function debugSnapshot() {
   const out = {
     env: {
@@ -349,6 +371,7 @@ async function debugSnapshot() {
       SHED_CLIENTS_FOLDER_ID: SHED_FOLDER_ID || null,
     },
     serviceAccountEmail: null,
+    calendar: {},
     folders: [],
   };
 
@@ -357,6 +380,45 @@ async function debugSnapshot() {
     if (raw) out.serviceAccountEmail = JSON.parse(raw).client_email || null;
   } catch { /* ignore */ }
 
+  // ── Calendar probe ─────────────────────────────────────────────
+  try {
+    const cal = calendarApi();
+    out.calendar.configuredId = CALENDAR_ID;
+
+    // 1) Can we read the calendar's metadata?
+    try {
+      const meta = await cal.calendars.get({ calendarId: CALENDAR_ID });
+      out.calendar.metadata = { id: meta.data.id, summary: meta.data.summary, timeZone: meta.data.timeZone };
+    } catch (e) {
+      out.calendar.metadataError = e.errors?.[0]?.message || e.message;
+    }
+
+    // 2) Which calendars does the SA actually have access to?
+    try {
+      const list = await cal.calendarList.list({ maxResults: 30 });
+      out.calendar.accessibleCalendars = (list.data.items || []).map(c => ({ id: c.id, summary: c.summary, accessRole: c.accessRole }));
+    } catch (e) {
+      out.calendar.calendarListError = e.errors?.[0]?.message || e.message;
+    }
+
+    // 3) Today's events (mirrors the real route)
+    const { timeMin, timeMax } = todayBoundsInCt();
+    out.calendar.window = { timeMin, timeMax };
+    try {
+      const ev = await cal.events.list({
+        calendarId: CALENDAR_ID, timeMin, timeMax,
+        singleEvents: true, orderBy: 'startTime', timeZone: TZ, maxResults: 25,
+      });
+      out.calendar.eventCount = (ev.data.items || []).length;
+      out.calendar.eventTitles = (ev.data.items || []).map(e => e.summary || '(no title)');
+    } catch (e) {
+      out.calendar.eventsError = e.errors?.[0]?.message || e.message;
+    }
+  } catch (e) {
+    out.calendar.fatalError = e.message;
+  }
+
+  // ── Drive / tasks probe ────────────────────────────────────────
   let folders = [];
   try {
     folders = await getClientFolders();
@@ -384,9 +446,9 @@ async function debugSnapshot() {
         try {
           const content = await fetchClaudeMd(folder.id);
           entry.contentLength = content ? content.length : 0;
-          // Detect whether the file has any "## Tasks"-ish heading
           const headings = (content || '').split(/\r?\n/).filter(l => /^##\s/.test(l)).map(l => l.trim());
           entry.h2Headings = headings;
+          entry.taskSections = extractTaskSectionLines(content || '');
           const tasks = parseTasksSection(content || '', folder.name);
           entry.openTaskCount = tasks.length;
           entry.firstTask = tasks[0] || null;
