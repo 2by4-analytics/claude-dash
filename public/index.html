@@ -587,7 +587,13 @@ function apiFetch(path) {
       showLogin();
       throw new Error('Unauthorized');
     }
-    return r.json();
+    return r.json().then(function(body) {
+      if (!r.ok) {
+        var msg = (body && body.error) ? body.error : ('HTTP ' + r.status);
+        throw new Error(msg);
+      }
+      return body;
+    });
   });
 }
 
