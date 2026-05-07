@@ -547,6 +547,7 @@ async function debugSnapshot() {
 module.exports = {
   getTodayMeetings,
   getOpenTasks,
+  getClientFolders,
   debugSnapshot,
   // Write helpers
   findClientFolderByName,

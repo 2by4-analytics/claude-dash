@@ -432,6 +432,31 @@
     border-radius: 8px;
   }
 
+  /* ── Clients section (full browser) ── */
+  .section-sub {
+    font-size: 0.78rem;
+    color: var(--slate-2);
+    letter-spacing: 0.02em;
+  }
+  .clients-grid {
+    background: #fff;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    padding: 8px 18px;
+  }
+  .clients-grid .task-client-count.empty {
+    background: rgba(15, 23, 42, 0.04);
+    color: var(--slate-2);
+    font-weight: 500;
+  }
+  .clients-grid .task-list-empty {
+    padding: 8px 4px 4px 26px;
+    color: var(--slate-2);
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+
   /* ── Recap modal ── */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -859,14 +884,13 @@
       </div>
     </section>
 
-    <!--
-      Phase 3: CLIENTS — per-client cards/index. Placeholder for now.
-    -->
+    <!-- CLIENTS — full per-client browser; same affordances as Today/Tasks. -->
     <section>
       <div class="section-head">
         <div class="section-eyebrow">Clients</div>
+        <div class="section-sub">Add tasks or drop meeting notes on any client</div>
       </div>
-      <div class="clients-placeholder">—</div>
+      <div id="clients-list" class="clients-grid today-loading">Loading…</div>
     </section>
 
   </main>
@@ -964,6 +988,7 @@ function showLaunchpad() {
   loadTasks();
   loadSticker();
   loadSheds();
+  loadClients();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1194,6 +1219,92 @@ function loadTasks() {
   });
 }
 
+// ─── Clients (full browser — every client, even those with no open tasks) ──
+
+function renderClientCard(folder, clientTasks) {
+  var name = folder.name;
+  var safeName = escapeHtml(name);
+  var nameAttr = name.replace(/"/g, '&quot;');
+  var count = clientTasks.length;
+  var summary = clientGroupSummary(clientTasks);
+  var countCls = count === 0 ? 'empty' : (summary.hasOverdue ? 'over' : (summary.hasToday ? 'today' : ''));
+
+  var rows = count
+    ? clientTasks.map(function(t) { return renderTaskRow(t, name); }).join('')
+    : '<div class="task-list-empty">No open tasks</div>';
+
+  return '<details class="task-client" data-client="' + nameAttr + '"' +
+      ' ondragover="onDragOver(event, this)"' +
+      ' ondragleave="onDragLeave(event, this)"' +
+      ' ondrop="onDrop(event, this)">' +
+    '<summary>' +
+      '<span class="task-client-chev">▸</span>' +
+      '<span class="task-client-name">' + safeName + '</span>' +
+      '<span class="task-client-count ' + countCls + '">' + count + '</span>' +
+    '</summary>' +
+    '<div class="task-list-inner">' + rows + '</div>' +
+    '<div class="task-client-footer">' +
+      '<input type="text" class="task-add-input" placeholder="Add task…" ' +
+        'onkeydown="if(event.key===\'Enter\'){event.preventDefault();submitAddTask(this);}">' +
+      '<button type="button" class="task-upload-btn" onclick="pickUploadFile(this)">' +
+        '<span class="upload-glyph">⇪</span> Upload notes' +
+      '</button>' +
+    '</div>' +
+  '</details>';
+}
+
+function loadClients() {
+  var el = document.getElementById('clients-list');
+  Promise.all([
+    apiFetch('/api/today/folders'),
+    apiFetch('/api/today/tasks'),
+  ]).then(function(results) {
+    var folders = (results[0] && results[0].folders) || [];
+    var tasks = (results[1] && results[1].tasks) || [];
+
+    // Group tasks by client name for quick lookup.
+    var byClient = {};
+    tasks.forEach(function(t) {
+      var c = t.client || '(unknown)';
+      if (!byClient[c]) byClient[c] = [];
+      byClient[c].push(t);
+    });
+    Object.keys(byClient).forEach(function(c) { byClient[c] = sortTasks(byClient[c]); });
+
+    // Group folders by type, sort each alphabetically.
+    var byType = { sticker: [], shed: [] };
+    folders.forEach(function(f) {
+      var t = (f.type === 'sticker' || f.type === 'shed') ? f.type : 'sticker';
+      byType[t].push(f);
+    });
+    Object.keys(byType).forEach(function(t) {
+      byType[t].sort(function(a, b) { return a.name.localeCompare(b.name); });
+    });
+
+    var html = '';
+    var typesPresent = ['sticker', 'shed'].filter(function(t) { return byType[t].length > 0; });
+    var showHeads = typesPresent.length > 1;
+
+    typesPresent.forEach(function(type) {
+      if (showHeads) {
+        var label = type === 'sticker' ? 'Sticker' : 'Sheds';
+        html += '<div class="task-type-head">' + label + '</div>';
+      }
+      byType[type].forEach(function(f) {
+        var ts = byClient[f.name] || [];
+        html += renderClientCard(f, ts);
+      });
+    });
+
+    el.className = 'clients-grid';
+    el.innerHTML = html || '<div class="task-list-empty">No clients configured</div>';
+  }).catch(function(e) {
+    if (e.message === 'Unauthorized') return;
+    el.className = 'clients-grid today-error';
+    el.textContent = e.message || 'Failed to load clients';
+  });
+}
+
 // ─── Task mutations ──────────────────────────────────────────────────────────
 
 function apiPost(path, body) {
@@ -1229,6 +1340,8 @@ function toggleTask(tid, btn) {
       var details = row.closest('details.task-client');
       row.remove();
       adjustClientCount(details, -1);
+      // Refresh the Clients section so its counts/rows stay in sync.
+      loadClients();
     }, 240);
   }).catch(function(e) {
     if (e.message === 'Unauthorized') return;
@@ -1268,9 +1381,15 @@ function submitAddTask(input) {
     input.focus();
     // Optimistically inject the new task at the bottom of the list.
     var list = details.querySelector('.task-list-inner');
+    // Drop "No open tasks" placeholder if present (zero-task client just got its first).
+    var emptyMsg = list.querySelector('.task-list-empty');
+    if (emptyMsg) emptyMsg.remove();
     var fakeTask = { line: text, raw: '- [ ] ' + text, urgent: false, dueDate: null };
     list.insertAdjacentHTML('beforeend', renderTaskRow(fakeTask, client));
     adjustClientCount(details, +1);
+    // Cross-refresh the other panel so it picks up the new task.
+    var inClientsSection = !!details.closest('#clients-list');
+    if (inClientsSection) loadTasks(); else loadClients();
   }).catch(function(e) {
     input.disabled = false;
     if (e.message !== 'Unauthorized') alert('Add failed: ' + e.message);
@@ -1451,7 +1570,8 @@ function commitRecap() {
     statusEl.textContent = 'Saved' + (res.openItemsAdded ? ' · ' + res.openItemsAdded + ' task' + (res.openItemsAdded === 1 ? '' : 's') + ' added' : '');
     setTimeout(function() {
       closeModal();
-      loadTasks(); // refresh the panel
+      loadTasks();
+      loadClients();
     }, 700);
   }).catch(function(e) {
     commitBtn.disabled = false;

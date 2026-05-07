@@ -621,6 +621,20 @@ router.get('/today/tasks', async (req, res) => {
   }
 });
 
+// GET /api/today/folders — all configured client folders (sticker + shed).
+// Used by the Clients browser so zero-task clients still appear.
+router.get('/today/folders', async (req, res) => {
+  try {
+    const folders = await googleSvc.getClientFolders();
+    res.json({
+      folders: folders.map(f => ({ name: f.name, type: f.type })),
+    });
+  } catch (err) {
+    console.error('[today/folders]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Diagnostic: shows what the SA can see — folder list, CLAUDE.md candidates,
 // detected ## headings, parsed task count. Hit in browser to debug empty results.
 router.get('/today/debug', async (req, res) => {
