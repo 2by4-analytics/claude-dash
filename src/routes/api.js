@@ -6,6 +6,7 @@ const { getFbHierarchy } = require('../services/fb');
 const { getCocHierarchy, getCocCampaignTotals } = require('../services/coc');
 const { mergeHierarchy } = require('../services/merger');
 const googleSvc = require('../services/google');
+const { toggleCheckboxLine, appendOpenItem, appendOpenItems } = require('../services/markdown');
 
 // GET /api/clients
 router.get('/clients', (req, res) => {
@@ -627,6 +628,150 @@ router.get('/today/debug', async (req, res) => {
     const snap = await googleSvc.debugSnapshot();
     res.json(snap);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── TODAY: writes (toggle + add + upload) ───────────────────────────────────
+
+// Resolve a client name from the request to a Drive folder; throws 4xx on miss.
+async function resolveClientFolder(req, res) {
+  const name = (req.body && req.body.client) || '';
+  if (!name) {
+    res.status(400).json({ error: 'client (folder name) required' });
+    return null;
+  }
+  const folder = await googleSvc.findClientFolderByName(name);
+  if (!folder) {
+    res.status(404).json({ error: `Client folder "${name}" not found` });
+    return null;
+  }
+  return folder;
+}
+
+// POST /api/today/tasks/toggle  { client, raw }
+// Flip the matching `- [ ]` ↔ `- [x]` line in the client's CLAUDE.md.
+router.post('/today/tasks/toggle', async (req, res) => {
+  try {
+    const folder = await resolveClientFolder(req, res);
+    if (!folder) return;
+    const raw = req.body && req.body.raw;
+    if (!raw) return res.status(400).json({ error: 'raw (original task line) required' });
+
+    const content = await googleSvc.fetchClaudeMd(folder.id);
+    if (!content) return res.status(404).json({ error: `No CLAUDE.md in "${folder.name}"` });
+
+    const { content: next, changed } = toggleCheckboxLine(content, raw);
+    if (!changed) return res.status(404).json({ error: 'Task line not found in CLAUDE.md (may be stale)' });
+
+    await googleSvc.writeClaudeMdContent(folder.id, next);
+    res.json({ ok: true, client: folder.name });
+  } catch (err) {
+    console.error('[today/tasks/toggle]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/today/tasks/add  { client, text }
+// Append `- [ ] text` to the first task-heading section (creating `## Open Items` if none).
+router.post('/today/tasks/add', async (req, res) => {
+  try {
+    const folder = await resolveClientFolder(req, res);
+    if (!folder) return;
+    const text = (req.body && req.body.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'text required' });
+
+    const content = await googleSvc.fetchClaudeMd(folder.id);
+    if (content == null) return res.status(404).json({ error: `No CLAUDE.md in "${folder.name}"` });
+
+    const { content: next, added, createdSection } = appendOpenItem(content, text);
+    if (!added) return res.status(400).json({ error: 'Nothing to add' });
+
+    await googleSvc.writeClaudeMdContent(folder.id, next);
+    res.json({ ok: true, client: folder.name, createdSection: !!createdSection });
+  } catch (err) {
+    console.error('[today/tasks/add]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/today/upload  { client, filename, fileMimeType, fileBase64?, fileText?, todayDate? }
+// Proxy to Brain's meeting-recap agent. Returns the draft for user review.
+// Does NOT write anything yet — `/today/upload/commit` is the second step.
+const BRAIN_BASE_URL = process.env.BRAIN_BASE_URL || 'https://brain.2by4llc.com';
+const BRAIN_PASSWORD = process.env.DASH_PASSWORD; // shared between dash + brain
+
+router.post('/today/upload', async (req, res) => {
+  try {
+    const folder = await resolveClientFolder(req, res);
+    if (!folder) return;
+    const { filename, fileMimeType, fileBase64, fileText, todayDate } = req.body || {};
+    if (!filename) return res.status(400).json({ error: 'filename required' });
+    if (!fileBase64 && !fileText) return res.status(400).json({ error: 'fileBase64 or fileText required' });
+
+    const r = await axios.post(`${BRAIN_BASE_URL}/api/agents/meeting-recap`, {
+      clientName: folder.name,
+      fileText, fileBase64, fileMimeType, todayDate,
+    }, {
+      headers: { 'x-dash-password': BRAIN_PASSWORD },
+      timeout: 120000,
+    });
+
+    const { recapMarkdown, openItems } = r.data || {};
+    if (typeof recapMarkdown !== 'string' || !Array.isArray(openItems)) {
+      return res.status(502).json({ error: 'Brain returned malformed response', upstream: r.data });
+    }
+
+    // Suggest a filename: <today>-<sanitized original stem>.md
+    const today = (todayDate && /^\d{4}-\d{2}-\d{2}$/.test(todayDate)) ? todayDate : new Date().toISOString().slice(0, 10);
+    const stem = String(filename).replace(/\.[^.]+$/, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'meeting';
+    const suggestedFilename = `${today}-${stem}.md`;
+
+    res.json({ client: folder.name, recapMarkdown, openItems, suggestedFilename });
+  } catch (err) {
+    const upstream = err.response?.data?.error || err.message;
+    console.error('[today/upload]', upstream);
+    res.status(502).json({ error: `Brain: ${upstream}` });
+  }
+});
+
+// POST /api/today/upload/commit  { client, filename, recapMarkdown, openItems[] }
+// Persist user-approved recap: write the .md file to the client's `meetings/`
+// folder and append the open items to its CLAUDE.md.
+router.post('/today/upload/commit', async (req, res) => {
+  try {
+    const folder = await resolveClientFolder(req, res);
+    if (!folder) return;
+    const { filename, recapMarkdown, openItems } = req.body || {};
+    if (!filename || typeof recapMarkdown !== 'string') {
+      return res.status(400).json({ error: 'filename and recapMarkdown required' });
+    }
+    const items = Array.isArray(openItems) ? openItems : [];
+
+    // 1) Write the recap file under <client>/meetings/
+    const meetingsFolder = await googleSvc.ensureSubfolder(folder.id, 'meetings');
+    const safeName = filename.endsWith('.md') ? filename : `${filename}.md`;
+    const file = await googleSvc.createFileInFolder(
+      meetingsFolder.id, safeName, 'text/markdown', Buffer.from(recapMarkdown, 'utf8')
+    );
+
+    // 2) Append open items to CLAUDE.md (if any)
+    let added = 0;
+    if (items.length) {
+      const content = await googleSvc.fetchClaudeMd(folder.id);
+      if (content != null) {
+        const { content: next, added: n } = appendOpenItems(content, items);
+        if (n > 0) {
+          await googleSvc.writeClaudeMdContent(folder.id, next);
+          added = n;
+        }
+      }
+    }
+
+    res.json({ ok: true, client: folder.name, file: { id: file.id, name: file.name, link: file.webViewLink || null }, openItemsAdded: added });
+  } catch (err) {
+    console.error('[today/upload/commit]', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -9,7 +9,8 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors());
-app.use(express.json());
+// 25MB ceiling so meeting-notes uploads (PDFs base64-encoded) fit comfortably.
+app.use(express.json({ limit: '25mb' }));
 
 // ─── Dashboard auth verification endpoint ──────────────────────────────────
 // Used by the login screen to validate the password

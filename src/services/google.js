@@ -4,12 +4,14 @@
  * Auth: GOOGLE_SERVICE_ACCOUNT_JSON env var (full service-account JSON as a
  * string). The calendar must be shared with the SA email, and both client
  * parent folders (STICKER_CLIENTS_FOLDER_ID, SHED_CLIENTS_FOLDER_ID) must
- * grant the SA Reader access. CALENDAR_ID defaults to 'primary' (only works
- * with domain-wide delegation — for a SA-only setup, set GOOGLE_CALENDAR_ID
- * to the calendar's address, e.g. alan@2by4llc.com).
+ * grant the SA **Editor** access (was Reader; writes need Editor).
+ * CALENDAR_ID defaults to 'primary' (only works with domain-wide delegation
+ * — for a SA-only setup, set GOOGLE_CALENDAR_ID to the calendar's address,
+ * e.g. alan@2by4llc.com).
  */
 
 const { google } = require('googleapis');
+const { Readable } = require('stream');
 
 const TZ = 'America/Chicago';
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
@@ -35,7 +37,9 @@ function getAuth() {
     credentials: creds,
     scopes: [
       'https://www.googleapis.com/auth/calendar.readonly',
-      'https://www.googleapis.com/auth/drive.readonly',
+      // Full drive scope — we mutate existing CLAUDE.md files (toggle/add tasks)
+      // and create new files under client folders (uploaded meeting recaps).
+      'https://www.googleapis.com/auth/drive',
     ],
   });
   return _auth;
@@ -207,7 +211,7 @@ async function getClientFolders() {
   return all;
 }
 
-async function fetchClaudeMd(folderId) {
+async function findClaudeMd(folderId) {
   const drive = driveApi();
   // Drive's `=` operator is case-sensitive; `contains` narrows the result set,
   // then we match case-insensitively client-side so claude.md / Claude.md /
@@ -217,17 +221,89 @@ async function fetchClaudeMd(folderId) {
     fields: 'files(id, name, mimeType)',
     pageSize: 50,
   });
-  const file = (res.data.files || []).find(f => /^claude\.md$/i.test(f.name));
-  if (!file) return null;
+  return (res.data.files || []).find(f => /^claude\.md$/i.test(f.name)) || null;
+}
 
-  // Google Doc → export as text/plain. Otherwise → download raw bytes.
+async function fetchClaudeMd(folderId) {
+  const file = await findClaudeMd(folderId);
+  if (!file) return null;
+  return fetchFileText(file);
+}
+
+async function fetchFileText(file) {
+  const drive = driveApi();
   if (file.mimeType === 'application/vnd.google-apps.document') {
     const r = await drive.files.export({ fileId: file.id, mimeType: 'text/plain' }, { responseType: 'text' });
     return typeof r.data === 'string' ? r.data : String(r.data);
-  } else {
-    const r = await drive.files.get({ fileId: file.id, alt: 'media' }, { responseType: 'text' });
-    return typeof r.data === 'string' ? r.data : String(r.data);
   }
+  const r = await drive.files.get({ fileId: file.id, alt: 'media' }, { responseType: 'text' });
+  return typeof r.data === 'string' ? r.data : String(r.data);
+}
+
+// ─── Drive: write helpers ─────────────────────────────────────────────────────
+
+function bufferToStream(buf) {
+  const s = new Readable();
+  s.push(buf);
+  s.push(null);
+  return s;
+}
+
+// Locate a client folder by display name (matches our cached folders list).
+async function findClientFolderByName(name) {
+  const folders = await getClientFolders();
+  return folders.find(f => f.name.toLowerCase() === String(name || '').toLowerCase()) || null;
+}
+
+// Mutate an existing CLAUDE.md. Throws if it's a Google Doc — we only round-trip
+// plain markdown to avoid clobbering Doc formatting on export-then-import.
+async function writeClaudeMdContent(folderId, newContent) {
+  const file = await findClaudeMd(folderId);
+  if (!file) throw new Error(`No CLAUDE.md in folder ${folderId}`);
+  if (file.mimeType === 'application/vnd.google-apps.document') {
+    throw new Error('CLAUDE.md is a Google Doc — convert to plain .md before editing from the Launchpad');
+  }
+  const drive = driveApi();
+  await drive.files.update({
+    fileId: file.id,
+    media: { mimeType: 'text/markdown', body: newContent },
+  });
+  invalidateTasksCache();
+  return { id: file.id, name: file.name };
+}
+
+// Find a child folder by name; create it if missing. Used to lazy-make a
+// `meetings/` subfolder under each client.
+async function ensureSubfolder(parentId, name) {
+  const drive = driveApi();
+  const safe = name.replace(/'/g, "\\'");
+  const res = await drive.files.list({
+    q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false and name = '${safe}'`,
+    fields: 'files(id, name)',
+    pageSize: 1,
+  });
+  if (res.data.files && res.data.files.length) return res.data.files[0];
+  const created = await drive.files.create({
+    requestBody: { name, parents: [parentId], mimeType: 'application/vnd.google-apps.folder' },
+    fields: 'id, name',
+  });
+  return created.data;
+}
+
+// Create a new file (any mime) inside `parentId`. `body` may be a Buffer or string.
+async function createFileInFolder(parentId, name, mimeType, body) {
+  const drive = driveApi();
+  const stream = Buffer.isBuffer(body) ? bufferToStream(body) : body;
+  const created = await drive.files.create({
+    requestBody: { name, parents: [parentId], mimeType },
+    media: { mimeType, body: stream },
+    fields: 'id, name, webViewLink',
+  });
+  return created.data;
+}
+
+function invalidateTasksCache() {
+  tasksCache = { data: null, asOf: null, ts: 0 };
 }
 
 // ─── Task parsing ─────────────────────────────────────────────────────────────
@@ -468,4 +544,15 @@ async function debugSnapshot() {
   return out;
 }
 
-module.exports = { getTodayMeetings, getOpenTasks, debugSnapshot };
+module.exports = {
+  getTodayMeetings,
+  getOpenTasks,
+  debugSnapshot,
+  // Write helpers
+  findClientFolderByName,
+  fetchClaudeMd,
+  writeClaudeMdContent,
+  ensureSubfolder,
+  createFileInFolder,
+  invalidateTasksCache,
+};

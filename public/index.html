@@ -349,6 +349,230 @@
   }
   .task-list-inner .task-row .task-client { display: none; } /* redundant inside its own group */
 
+  /* ── Interactive checkbox ── */
+  .task-check-btn {
+    appearance: none;
+    background: #fff;
+    border: 1.5px solid var(--line);
+    border-radius: 4px;
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    cursor: pointer;
+    padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 140ms ease, border-color 140ms ease, transform 80ms ease;
+    color: transparent;
+    font-size: 12px; line-height: 1;
+    font-weight: 800;
+  }
+  .task-check-btn:hover { border-color: var(--amber); background: var(--amber-soft); }
+  .task-check-btn:active { transform: scale(0.92); }
+  .task-check-btn.checked {
+    background: var(--good);
+    border-color: var(--good);
+    color: #fff;
+  }
+  .task-row.completing .task-text {
+    color: var(--slate-2);
+    text-decoration: line-through;
+  }
+  .task-row.removing {
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity 220ms ease, transform 220ms ease;
+  }
+
+  /* ── Inline add-task + upload affordance (per-client footer) ── */
+  .task-client-footer {
+    padding: 6px 4px 12px 26px;
+    display: flex; align-items: center; gap: 10px;
+    border-top: 1px dashed var(--line-soft);
+    margin-top: 2px;
+  }
+  .task-add-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 0.88rem;
+    color: var(--navy);
+    padding: 6px 0;
+    border-bottom: 1.5px solid transparent;
+    transition: border-color 140ms ease;
+  }
+  .task-add-input::placeholder { color: var(--slate-2); }
+  .task-add-input:focus { border-bottom-color: var(--amber); }
+  .task-upload-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.74rem; font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+    flex-shrink: 0;
+  }
+  .task-upload-btn:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+  .task-upload-btn[disabled] { opacity: 0.55; cursor: progress; }
+  .task-upload-btn .upload-glyph { font-size: 0.9rem; line-height: 1; }
+  .footer-error {
+    padding: 4px 4px 8px 26px;
+    font-size: 0.75rem;
+    color: var(--over);
+  }
+
+  /* ── Drag-over highlight (drop a file directly onto a client row) ── */
+  details.task-client.drop-target {
+    background: var(--amber-soft);
+    box-shadow: inset 0 0 0 2px var(--amber);
+    border-radius: 8px;
+  }
+
+  /* ── Recap modal ── */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    z-index: 100;
+    animation: fadeIn 160ms ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: #fff;
+    width: min(720px, 100%);
+    max-height: calc(100vh - 48px);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  }
+  .modal-title {
+    font-family: "Instrument Serif", serif;
+    font-size: 1.45rem;
+    color: var(--navy);
+  }
+  .modal-sub {
+    font-size: 0.78rem;
+    color: var(--slate-2);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .modal-body {
+    padding: 16px 22px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .modal-field-label {
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--slate-2);
+    margin-bottom: 6px;
+  }
+  .modal-input {
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 0.9rem;
+    color: var(--navy);
+    font-family: inherit;
+    outline: none;
+    transition: border-color 140ms ease;
+  }
+  .modal-input:focus { border-color: var(--amber); }
+  .modal-textarea {
+    width: 100%;
+    min-height: 220px;
+    resize: vertical;
+    background: var(--gray);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    color: var(--navy);
+    font-family: 'SFMono-Regular', Consolas, ui-monospace, monospace;
+    line-height: 1.5;
+    outline: none;
+    transition: border-color 140ms ease;
+  }
+  .modal-textarea:focus { border-color: var(--amber); background: #fff; }
+  .modal-items { display: flex; flex-direction: column; }
+  .modal-item-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  .modal-item-row:first-child { border-top: none; }
+  .modal-item-row input[type="checkbox"] {
+    margin-top: 4px;
+    accent-color: var(--good);
+    flex-shrink: 0;
+  }
+  .modal-item-text {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--navy);
+    font-size: 0.88rem;
+    line-height: 1.4;
+    padding: 2px 0;
+    border-bottom: 1px solid transparent;
+    font-family: inherit;
+    resize: none;
+  }
+  .modal-item-text:focus { border-bottom-color: var(--amber); }
+  .modal-item-row.unchecked .modal-item-text { color: var(--slate-2); text-decoration: line-through; }
+  .modal-empty {
+    color: var(--slate-2);
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+  .modal-foot {
+    padding: 14px 22px 18px;
+    border-top: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .modal-status {
+    font-size: 0.78rem;
+    color: var(--slate-2);
+    flex: 1;
+  }
+  .modal-status.error { color: var(--over); }
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--navy);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 0.82rem; font-weight: 600;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+  .modal-btn:hover { border-color: var(--slate); }
+  .modal-btn.primary {
+    background: var(--navy);
+    color: #fff;
+    border-color: var(--navy);
+  }
+  .modal-btn.primary:hover { background: var(--ink); }
+  .modal-btn[disabled] { opacity: 0.5; cursor: progress; }
+
   /* ── Mini cards (CPP / CPL) ── */
   .mini-cards {
     display: flex; flex-wrap: wrap; gap: 12px;
@@ -648,6 +872,40 @@
   </main>
 </div>
 
+<!-- Recap modal (hidden by default; shown after a successful upload) -->
+<div id="recap-modal-backdrop" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recap-modal-title">
+    <div class="modal-head">
+      <div>
+        <div id="recap-modal-title" class="modal-title">Review meeting recap</div>
+        <div class="modal-sub">Client · <span id="recap-modal-client">—</span></div>
+      </div>
+      <button class="modal-btn" onclick="closeModal()">Cancel</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="modal-field-label">Filename</div>
+        <input id="recap-filename" class="modal-input" type="text" placeholder="2026-05-07-meeting.md">
+      </div>
+      <div>
+        <div class="modal-field-label">Recap (markdown)</div>
+        <textarea id="recap-textarea" class="modal-textarea" spellcheck="false"></textarea>
+      </div>
+      <div>
+        <div class="modal-field-label">Action items to add to Open Items</div>
+        <div id="recap-items" class="modal-items"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div id="recap-status" class="modal-status">Edit anything above. Uncheck items you don't want to add.</div>
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeModal()">Discard</button>
+        <button id="recap-commit-btn" class="modal-btn primary" onclick="commitRecap()">Save recap + add tasks</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 var DASH_PASSWORD = sessionStorage.getItem('dash_password') || '';
 
@@ -810,15 +1068,23 @@ function sortTasks(tasks) {
   });
 }
 
-function renderTaskRow(t) {
+// Stash raw task lines indexed by stable id so the toggle handler can send
+// the exact original line back to the API (matching is exact-string).
+var TASK_RAW = {};
+var _taskUid = 0;
+function nextTaskId() { return 't' + (++_taskUid); }
+
+function renderTaskRow(t, clientName) {
   var chip = '';
   if (t.dueDate) {
     var cls = t.isOverdue ? 'over' : (t.isDueToday ? 'today' : 'future');
     chip = '<span class="due-chip ' + cls + '">' + escapeHtml(fmtDueChip(t.dueDate)) + '</span>';
   }
   var urgent = t.urgent ? '<span class="task-urgent">!!</span>' : '';
-  return '<div class="task-row">' +
-    '<span class="task-check">□</span>' +
+  var id = nextTaskId();
+  TASK_RAW[id] = { client: clientName, raw: t.raw };
+  return '<div class="task-row" data-tid="' + id + '">' +
+    '<button type="button" class="task-check-btn" aria-label="Mark complete" onclick="toggleTask(\'' + id + '\', this)">✓</button>' +
     '<span class="task-text">' + urgent + escapeHtml(t.line) + '</span>' +
     chip +
   '</div>';
@@ -844,6 +1110,9 @@ function rankClientGroup(tasks) {
 
 function loadTasks() {
   var el = document.getElementById('today-tasks');
+  // Reset the raw-line registry — stale ids would otherwise pin to old text.
+  TASK_RAW = {};
+  _taskUid = 0;
   apiFetch('/api/today/tasks').then(function(data) {
     var tasks = (data && data.tasks) || [];
     if (!tasks.length) {
@@ -891,14 +1160,26 @@ function loadTasks() {
         var openByDefault = summary.hasOverdue || summary.hasToday;
         var countCls = summary.hasOverdue ? 'over' : (summary.hasToday ? 'today' : '');
 
-        html += '<details class="task-client"' + (openByDefault ? ' open' : '') + '>' +
+        var safeName = escapeHtml(name);
+        var nameAttr = name.replace(/"/g, '&quot;');
+        html += '<details class="task-client"' + (openByDefault ? ' open' : '') + ' data-client="' + nameAttr + '"' +
+            ' ondragover="onDragOver(event, this)"' +
+            ' ondragleave="onDragLeave(event, this)"' +
+            ' ondrop="onDrop(event, this)">' +
           '<summary>' +
             '<span class="task-client-chev">▸</span>' +
-            '<span class="task-client-name">' + escapeHtml(name) + '</span>' +
+            '<span class="task-client-name">' + safeName + '</span>' +
             '<span class="task-client-count ' + countCls + '">' + clientTasks.length + '</span>' +
           '</summary>' +
           '<div class="task-list-inner">' +
-            clientTasks.map(renderTaskRow).join('') +
+            clientTasks.map(function(t) { return renderTaskRow(t, name); }).join('') +
+          '</div>' +
+          '<div class="task-client-footer">' +
+            '<input type="text" class="task-add-input" placeholder="Add task…" ' +
+              'onkeydown="if(event.key===\'Enter\'){event.preventDefault();submitAddTask(this);}">' +
+            '<button type="button" class="task-upload-btn" onclick="pickUploadFile(this)">' +
+              '<span class="upload-glyph">⇪</span> Upload notes' +
+            '</button>' +
           '</div>' +
         '</details>';
       });
@@ -910,6 +1191,273 @@ function loadTasks() {
     if (e.message === 'Unauthorized') return;
     el.className = 'today-error';
     el.textContent = e.message || 'Failed to load tasks';
+  });
+}
+
+// ─── Task mutations ──────────────────────────────────────────────────────────
+
+function apiPost(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-dash-password': DASH_PASSWORD },
+    body: JSON.stringify(body || {}),
+  }).then(function(r) {
+    if (r.status === 401) {
+      sessionStorage.removeItem('dash_password'); showLogin();
+      throw new Error('Unauthorized');
+    }
+    return r.json().then(function(b) {
+      if (!r.ok) throw new Error((b && b.error) || ('HTTP ' + r.status));
+      return b;
+    });
+  });
+}
+
+function toggleTask(tid, btn) {
+  var meta = TASK_RAW[tid];
+  if (!meta) return;
+  var row = btn.closest('.task-row');
+  if (!row || row.classList.contains('completing')) return;
+  row.classList.add('completing');
+  btn.classList.add('checked');
+  btn.setAttribute('disabled', 'true');
+
+  apiPost('/api/today/tasks/toggle', { client: meta.client, raw: meta.raw }).then(function() {
+    // Animate-remove from the open list (the launchpad only displays unchecked).
+    row.classList.add('removing');
+    setTimeout(function() {
+      var details = row.closest('details.task-client');
+      row.remove();
+      adjustClientCount(details, -1);
+    }, 240);
+  }).catch(function(e) {
+    if (e.message === 'Unauthorized') return;
+    row.classList.remove('completing');
+    btn.classList.remove('checked');
+    btn.removeAttribute('disabled');
+    alert('Toggle failed: ' + e.message);
+  });
+}
+
+function adjustClientCount(details, delta) {
+  if (!details) return;
+  var badge = details.querySelector('.task-client-count');
+  if (!badge) return;
+  var n = parseInt(badge.textContent, 10);
+  if (!isNaN(n)) {
+    var next = Math.max(0, n + delta);
+    badge.textContent = String(next);
+    if (next === 0) {
+      // Empty client — collapse and hide. Reload on next page open.
+      details.style.display = 'none';
+    }
+  }
+}
+
+function submitAddTask(input) {
+  var text = (input.value || '').trim();
+  if (!text) return;
+  var details = input.closest('details.task-client');
+  var client = details && details.dataset.client;
+  if (!client) return;
+  input.disabled = true;
+
+  apiPost('/api/today/tasks/add', { client: client, text: text }).then(function() {
+    input.value = '';
+    input.disabled = false;
+    input.focus();
+    // Optimistically inject the new task at the bottom of the list.
+    var list = details.querySelector('.task-list-inner');
+    var fakeTask = { line: text, raw: '- [ ] ' + text, urgent: false, dueDate: null };
+    list.insertAdjacentHTML('beforeend', renderTaskRow(fakeTask, client));
+    adjustClientCount(details, +1);
+  }).catch(function(e) {
+    input.disabled = false;
+    if (e.message !== 'Unauthorized') alert('Add failed: ' + e.message);
+  });
+}
+
+// ─── Upload + recap ──────────────────────────────────────────────────────────
+
+function pickUploadFile(btn) {
+  var details = btn.closest('details.task-client');
+  if (!details) return;
+  // Lazily build a hidden file input and trigger it. The handler reads the
+  // client off the surrounding <details data-client>.
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.md,.txt,.pdf,text/markdown,text/plain,application/pdf';
+  input.style.display = 'none';
+  input.addEventListener('change', function() {
+    if (!input.files || !input.files[0]) return;
+    handleUpload(details, input.files[0], btn);
+  });
+  document.body.appendChild(input);
+  input.click();
+  setTimeout(function() { input.remove(); }, 0);
+}
+
+function onDragOver(e, details) {
+  if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+  e.preventDefault();
+  details.classList.add('drop-target');
+}
+function onDragLeave(e, details) {
+  details.classList.remove('drop-target');
+}
+function onDrop(e, details) {
+  details.classList.remove('drop-target');
+  if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
+  e.preventDefault();
+  if (!details.open) details.open = true;
+  handleUpload(details, e.dataTransfer.files[0], null);
+}
+
+function readFile(file) {
+  return new Promise(function(resolve, reject) {
+    var fr = new FileReader();
+    var name = (file.name || '').toLowerCase();
+    var isPdf = file.type === 'application/pdf' || name.endsWith('.pdf');
+    fr.onerror = function() { reject(new Error('Failed to read file')); };
+    fr.onload = function() {
+      if (isPdf) {
+        // ArrayBuffer → base64
+        var bytes = new Uint8Array(fr.result);
+        var bin = '';
+        for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        resolve({ kind: 'pdf', base64: btoa(bin), name: file.name });
+      } else {
+        resolve({ kind: 'text', text: String(fr.result || ''), name: file.name });
+      }
+    };
+    if (isPdf) fr.readAsArrayBuffer(file);
+    else fr.readAsText(file);
+  });
+}
+
+function handleUpload(details, file, btn) {
+  var client = details && details.dataset.client;
+  if (!client) return;
+  if (btn) { btn.disabled = true; }
+  setFooterError(details, '');
+
+  var todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); // YYYY-MM-DD CT
+
+  readFile(file).then(function(payload) {
+    var body = { client: client, filename: payload.name, todayDate: todayDate };
+    if (payload.kind === 'pdf') { body.fileBase64 = payload.base64; body.fileMimeType = 'application/pdf'; }
+    else { body.fileText = payload.text; body.fileMimeType = file.type || 'text/plain'; }
+    return apiPost('/api/today/upload', body);
+  }).then(function(data) {
+    if (btn) btn.disabled = false;
+    showRecapModal(client, data);
+  }).catch(function(e) {
+    if (btn) btn.disabled = false;
+    if (e.message === 'Unauthorized') return;
+    setFooterError(details, e.message || 'Upload failed');
+  });
+}
+
+function setFooterError(details, msg) {
+  if (!details) return;
+  var existing = details.querySelector('.footer-error');
+  if (!msg) { if (existing) existing.remove(); return; }
+  if (!existing) {
+    existing = document.createElement('div');
+    existing.className = 'footer-error';
+    var footer = details.querySelector('.task-client-footer');
+    footer.parentNode.insertBefore(existing, footer);
+  }
+  existing.textContent = msg;
+}
+
+// ── Recap modal ──────────────────────────────────────────────────────────────
+
+var modalState = null;
+
+function showRecapModal(client, data) {
+  modalState = {
+    client: client,
+    suggestedFilename: data.suggestedFilename || ('meeting-' + Date.now() + '.md'),
+    recapMarkdown: data.recapMarkdown || '',
+    openItems: (data.openItems || []).map(function(s) { return { text: s, checked: true }; }),
+  };
+  renderModal();
+  document.getElementById('recap-modal-backdrop').style.display = 'flex';
+  setTimeout(function() {
+    var fn = document.getElementById('recap-filename');
+    if (fn) fn.focus();
+  }, 30);
+}
+
+function renderModal() {
+  if (!modalState) return;
+  var s = modalState;
+  document.getElementById('recap-modal-client').textContent = s.client;
+  document.getElementById('recap-filename').value = s.suggestedFilename;
+  document.getElementById('recap-textarea').value = s.recapMarkdown;
+
+  var itemsEl = document.getElementById('recap-items');
+  if (!s.openItems.length) {
+    itemsEl.innerHTML = '<div class="modal-empty">No action items detected. The recap file will still be saved.</div>';
+    return;
+  }
+  itemsEl.innerHTML = s.openItems.map(function(it, i) {
+    return '<div class="modal-item-row' + (it.checked ? '' : ' unchecked') + '">' +
+      '<input type="checkbox" ' + (it.checked ? 'checked' : '') + ' onchange="onItemToggle(' + i + ', this)">' +
+      '<input class="modal-item-text" type="text" value="' + escapeHtml(it.text) + '" oninput="onItemEdit(' + i + ', this)">' +
+    '</div>';
+  }).join('');
+}
+
+function onItemToggle(i, cb) {
+  if (!modalState || !modalState.openItems[i]) return;
+  modalState.openItems[i].checked = cb.checked;
+  cb.parentElement.classList.toggle('unchecked', !cb.checked);
+}
+function onItemEdit(i, input) {
+  if (!modalState || !modalState.openItems[i]) return;
+  modalState.openItems[i].text = input.value;
+}
+
+function closeModal() {
+  document.getElementById('recap-modal-backdrop').style.display = 'none';
+  modalState = null;
+}
+
+function commitRecap() {
+  if (!modalState) return;
+  var filenameEl = document.getElementById('recap-filename');
+  var textareaEl = document.getElementById('recap-textarea');
+  var statusEl = document.getElementById('recap-status');
+  var commitBtn = document.getElementById('recap-commit-btn');
+
+  var filename = (filenameEl.value || '').trim() || modalState.suggestedFilename;
+  var recapMarkdown = textareaEl.value;
+  var openItems = modalState.openItems
+    .filter(function(it) { return it.checked && it.text.trim(); })
+    .map(function(it) { return it.text.trim(); });
+
+  commitBtn.disabled = true;
+  statusEl.textContent = 'Saving…';
+  statusEl.className = 'modal-status';
+
+  apiPost('/api/today/upload/commit', {
+    client: modalState.client,
+    filename: filename,
+    recapMarkdown: recapMarkdown,
+    openItems: openItems,
+  }).then(function(res) {
+    statusEl.textContent = 'Saved' + (res.openItemsAdded ? ' · ' + res.openItemsAdded + ' task' + (res.openItemsAdded === 1 ? '' : 's') + ' added' : '');
+    setTimeout(function() {
+      closeModal();
+      loadTasks(); // refresh the panel
+    }, 700);
+  }).catch(function(e) {
+    commitBtn.disabled = false;
+    if (e.message === 'Unauthorized') return;
+    statusEl.textContent = e.message || 'Save failed';
+    statusEl.className = 'modal-status error';
   });
 }
 
