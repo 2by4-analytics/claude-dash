@@ -30,7 +30,8 @@ claude-dash/
 │       ├── fb.js              # Facebook Marketing API
 │       ├── coc.js             # Checkout Champ API
 │       ├── merger.js          # Joins FB + CoC by UTM
-│       └── google.js          # Calendar + Drive (Launchpad TODAY block)
+│       ├── google.js          # Calendar + Drive (Launchpad TODAY block + writes)
+│       └── markdown.js        # Pure helpers: toggle/append checkbox lines in CLAUDE.md
 └── fb-coc-dashboard/          # Legacy version — do not edit, kept for reference only
 ```
 
@@ -52,12 +53,21 @@ PORT=3000
 SHEDS_BASE_URL=https://sheds.2by4llc.com
 SHEDS_DASH_PASSWORD=               # NOT the same as DASH_PASSWORD — sheds has its own
 
-# Google (Launchpad TODAY block)
+# Brain (Launchpad meeting-notes upload → recap)
+BRAIN_BASE_URL=https://brain.2by4llc.com   # defaults to this if unset
+                                   # Brain's /api/agents/meeting-recap is gated by x-dash-password
+                                   # matching this service's DASH_PASSWORD.
+
+# Google (Launchpad TODAY block + writes)
 GOOGLE_SERVICE_ACCOUNT_JSON=       # whole SA JSON, as a string
 GOOGLE_CALENDAR_ID=                # full ID, e.g. c_<random>@group.calendar.google.com
                                    # see "Calendar gotcha" below
 STICKER_CLIENTS_FOLDER_ID=         # Drive parent folder of sticker client subfolders
 SHED_CLIENTS_FOLDER_ID=            # Drive parent folder of shed client subfolders
+                                   # Both folders must grant the SA **Editor** access — toggling
+                                   # checkboxes, adding tasks, and saving meeting recaps all
+                                   # write to Drive. Sharing the parent `2by4` folder as Editor
+                                   # cascades to both.
 ```
 
 To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
@@ -78,6 +88,11 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `GET /api/sheds/cpl-yesterday` | Proxies sheds.2by4llc.com `/api/rollup` → CPL row per shed client (5min cache) |
 | `GET /api/today/meetings` | Google Calendar events for today CT |
 | `GET /api/today/tasks` | Open `- [ ]` items parsed from each client folder's CLAUDE.md |
+| `GET /api/today/folders` | All configured client folders (name + type) — feeds the Clients section so zero-task clients still appear |
+| `POST /api/today/tasks/toggle` | Body `{ client, raw }` — flip `- [ ]` ↔ `- [x]` on the matching line in CLAUDE.md |
+| `POST /api/today/tasks/add` | Body `{ client, text }` — append `- [ ] text` under the first task heading (creates `## Open Items` if absent) |
+| `POST /api/today/upload` | Body `{ client, filename, fileBase64?, fileText?, fileMimeType?, todayDate? }` — proxies to Brain's meeting-recap agent, returns draft `{ recapMarkdown, openItems[], suggestedFilename }` for user review |
+| `POST /api/today/upload/commit` | Body `{ client, filename, recapMarkdown, openItems[] }` — writes the recap to `<client>/meetings/<filename>.md` and appends approved items to CLAUDE.md |
 | `GET /api/today/debug` | Diagnostic snapshot — calendar accessibility, folders, parsed task sections |
 | `GET /api/debug/coc/:clientId?campaignId&startDate&endDate` | Raw CoC responses |
 | `GET /api/debug/orders/:clientId?campaignId&startDate&endDate` | Order status/type breakdown |
@@ -92,13 +107,25 @@ Auth: every `/api/*` route is gated by `dashAuth` (header `x-dash-password` or `
 The `/` page. Sections, top to bottom:
 
 - **Hero**: brand-mark + "Launchpad", today's date right-aligned.
-- **TODAY**: meetings + tasks. See "Google integration" below.
+- **TODAY**: meetings + tasks. Tasks panel shows only clients with open work; checkboxes are clickable, the inline "Add task…" input commits to CLAUDE.md, and the "Upload notes" button (or drag-drop onto a client row) triggers the meeting-recap flow.
 - **Sticker · yesterday CPP**: one mini-card per sticker client. Reuses `/api/cpp-daily` + `/api/cpp-7day`. Green/red border vs `cppTarget`.
 - **Sheds · yesterday CPL**: one mini-card per shed client. Pulls from the proxy.
 - **Tools**: Media Dashboard (`/dash`), Sheds Meta Ads, Brain, Admin. All open in new tabs.
-- **Clients**: Phase 3 placeholder.
+- **Clients**: full per-client browser. Lists every configured client (sticker + shed) regardless of open-task count, with the same affordances as the Tasks panel — useful for adding a task or dropping notes on a client that has zero open items.
 
 Design system mirrors `2by4llc.com`: Manrope body, Instrument Serif for hero/values, navy `#0f172a` ink, amber `#f59e0b` accent, light gradient background. Brand mark inlined as SVG (also serves as the favicon).
+
+### Task writes (toggle / add / upload)
+
+Both panels mutate the same source — `<client>/CLAUDE.md` in Drive — and bust the 10-min tasks cache after every write so the panels stay consistent. Mutations cross-refresh between Tasks panel and Clients section.
+
+**Toggle.** Click a checkbox → `POST /api/today/tasks/toggle` with the original `raw` line text. Server flips `[ ]` ↔ `[x]` and saves. Open-task list animate-removes the row on success.
+
+**Add.** Type into "Add task…" + Enter → `POST /api/today/tasks/add`. Server appends a `- [ ]` line directly after the last existing item under the first task heading (`## Open Items` / `## Tasks` / `## Todo` / `## To Do` / `## Action Items`). If no such heading exists, a fresh `## Open Items` section is appended at EOF.
+
+**Upload.** Drop a file (or click Upload notes → file picker; `.md`, `.txt`, `.pdf` accepted) → `POST /api/today/upload` reads the file, sends it to Brain's `/api/agents/meeting-recap` (gated by shared `DASH_PASSWORD`), and returns `{ recapMarkdown, openItems[], suggestedFilename }`. The Launchpad shows a review modal — Alan can edit the filename, edit the recap markdown, and check/uncheck/edit each suggested action item. On commit → `POST /api/today/upload/commit` writes the recap to `<client>/meetings/<filename>.md` (creating the `meetings/` subfolder if needed) and appends checked items to `## Open Items`.
+
+**Constraints.** Toggle/add only work on **plain markdown** CLAUDE.md files — Google Docs are rejected with a clear error to avoid clobbering Doc formatting on export-then-import. Body limit is 25 MB on `/api/*` (PDFs as base64 inflate ~33 %).
 
 ---
 
