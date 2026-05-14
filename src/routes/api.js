@@ -470,15 +470,16 @@ async function fetchCppForRange(client, startDate, endDate, timeoutMs = 55000) {
   };
 }
 
-async function buildDailySnapshot() {
+async function buildDailySnapshot(startDateOverride, endDateOverride) {
   const clients = getClients().filter(c => !SHED_IDS.includes(c.id));
 
   const results = await Promise.allSettled(clients.map(async (client) => {
     const tz = getClientTimezone(client);
-    const date = getYesterdayInTz(tz);
+    const start = startDateOverride || getYesterdayInTz(tz);
+    const end = endDateOverride || start;
     const cppTarget = client.adAccounts?.[0]?.cppTarget || null;
-    const { spend, purchases, cpp } = await fetchCppForRange(client, date, date);
-    return { id: client.id, name: client.name, timezone: tz, date, spend, purchases, cpp, cppTarget };
+    const { spend, purchases, cpp } = await fetchCppForRange(client, start, end, 90000);
+    return { id: client.id, name: client.name, timezone: tz, date: start, endDate: end, spend, purchases, cpp, cppTarget };
   }));
 
   return results.map((r, i) => r.status === 'fulfilled'
@@ -519,12 +520,31 @@ async function runCppSnapshot() {
 }
 
 // GET /api/cpp-daily — serve from cache, fetch on demand if cache is cold
+// Optional ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD bypasses cache for custom ranges
 router.get('/cpp-daily', async (req, res) => {
-  const date = getYesterdayInTz('America/Chicago');
-  if (cacheDaily.date === date && cacheDaily.data) return res.json(cacheDaily.data);
+  const yesterday = getYesterdayInTz('America/Chicago');
+  const { startDate, endDate } = req.query;
+
+  // Default path: yesterday-only, use cache
+  if (!startDate && !endDate) {
+    if (cacheDaily.date === yesterday && cacheDaily.data) return res.json(cacheDaily.data);
+    try {
+      const data = await buildDailySnapshot();
+      cacheDaily = { date: yesterday, data };
+      return res.json(data);
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // Custom range — compute on demand, no cache
+  const s = startDate || endDate;
+  const e = endDate || startDate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !/^\d{4}-\d{2}-\d{2}$/.test(e)) {
+    return res.status(400).json({ error: 'startDate and endDate must be YYYY-MM-DD' });
+  }
   try {
-    const data = await buildDailySnapshot();
-    cacheDaily = { date, data };
+    const data = await buildDailySnapshot(s, e);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

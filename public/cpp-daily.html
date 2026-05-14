@@ -88,12 +88,19 @@
 
   /* ── Page ── */
   .page {
-    max-width: 860px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: 48px 32px 80px;
   }
 
-  .heading { margin-bottom: 36px; }
+  .heading {
+    margin-bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
 
   .heading-label {
     font-family: var(--mono);
@@ -118,12 +125,73 @@
     color: var(--text-dim);
   }
 
-  /* ── Two-column grid ── */
+  /* ── Three-column grid ── */
   .client-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
   }
+
+  /* ── Date filter ── */
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .filter-pill {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 6px 12px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+
+  .filter-pill:hover { border-color: var(--text-dim); color: var(--text); }
+  .filter-pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+  }
+
+  .custom-range {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    margin-left: 4px;
+  }
+
+  .custom-range.open { display: flex; }
+
+  .custom-range input[type="date"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 5px 8px;
+    color-scheme: dark;
+  }
+
+  .custom-range button {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #000;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 5px 10px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .custom-range button:disabled { opacity: 0.3; cursor: not-allowed; }
 
   .client-card {
     background: var(--surface);
@@ -277,8 +345,13 @@
     50%       { opacity: 0.7; }
   }
 
+  @media (max-width: 900px) {
+    .client-grid { grid-template-columns: 1fr 1fr; }
+  }
+
   @media (max-width: 600px) {
     .client-grid { grid-template-columns: 1fr; }
+    .heading { flex-direction: column; align-items: flex-start; }
   }
 </style>
 </head>
@@ -296,12 +369,28 @@
 
 <div class="page">
   <div class="heading">
-    <div class="heading-label">Sticker Funnel · Account CPP</div>
-    <div class="heading-date" id="heading-date">Yesterday</div>
-    <div class="heading-meta" id="heading-meta">Loading...</div>
+    <div>
+      <div class="heading-label">Sticker Funnel · Account CPP</div>
+      <div class="heading-date" id="heading-date">Yesterday</div>
+      <div class="heading-meta" id="heading-meta">Loading...</div>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-pill" data-range="today">Today</button>
+      <button class="filter-pill active" data-range="yesterday">Yesterday</button>
+      <button class="filter-pill" data-range="7d">Last 7</button>
+      <button class="filter-pill" data-range="custom">Custom</button>
+      <div class="custom-range" id="custom-range">
+        <input type="date" id="custom-start">
+        <span style="color:var(--text-dim);font-family:var(--mono);font-size:10px;">→</span>
+        <input type="date" id="custom-end">
+        <button id="custom-apply">Apply</button>
+      </div>
+    </div>
   </div>
 
   <div class="client-grid" id="client-grid">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
     <div class="skeleton"></div>
     <div class="skeleton"></div>
     <div class="skeleton"></div>
@@ -366,6 +455,46 @@ function vsTargetLabel(cpp, target) {
   return { text: `${pct}% over $${target} target`, cls: diff / target <= 0.15 ? 'warn' : 'over' };
 }
 
+// ── Date range state ─────────────────────────────────────────────────────────
+
+var currentRange = { kind: 'yesterday', startDate: null, endDate: null };
+
+function todayCT() {
+  // Approximation: assume the browser is in or near CT. The server resolves
+  // the actual "today" for cache purposes; this is just for default Custom inputs.
+  return new Date().toISOString().split('T')[0];
+}
+
+function shiftDate(yyyymmdd, deltaDays) {
+  const d = new Date(yyyymmdd + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().split('T')[0];
+}
+
+function resolveRange(kind, customStart, customEnd) {
+  const today = todayCT();
+  if (kind === 'today')     return { startDate: today, endDate: today };
+  if (kind === 'yesterday') return { startDate: shiftDate(today, -1), endDate: shiftDate(today, -1) };
+  if (kind === '7d')        return { startDate: shiftDate(today, -7), endDate: shiftDate(today, -1) };
+  if (kind === 'custom')    return { startDate: customStart, endDate: customEnd };
+  return { startDate: null, endDate: null };
+}
+
+function rangeLabel(kind, startDate, endDate) {
+  function fmt(d) {
+    const dt = new Date(d + 'T12:00:00');
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  if (kind === 'today')     return 'Today · ' + fmt(startDate);
+  if (kind === 'yesterday') {
+    const dt = new Date(startDate + 'T12:00:00');
+    return dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  if (kind === '7d')        return 'Last 7 days · ' + fmt(startDate) + ' – ' + fmt(endDate);
+  if (kind === 'custom')    return fmt(startDate) + ' – ' + fmt(endDate);
+  return '';
+}
+
 // ── Load ─────────────────────────────────────────────────────────────────────
 
 async function load() {
@@ -373,14 +502,30 @@ async function load() {
   btn.disabled = true;
   btn.textContent = 'Loading...';
 
-  const dailyPromise = apiFetch('/api/cpp-daily');
-  const weekPromise  = apiFetch('/api/cpp-7day');
+  const showSkeleton = currentRange.kind !== 'yesterday';
+  if (showSkeleton) {
+    const cells = Array.from({length:6}).map(() => '<div class="skeleton"></div>').join('');
+    document.getElementById('client-grid').innerHTML = cells;
+  }
+
+  // Build URL. Default (yesterday) uses cached endpoint with no params.
+  const isDefault = currentRange.kind === 'yesterday';
+  let url = '/api/cpp-daily';
+  if (!isDefault) {
+    const { startDate, endDate } = resolveRange(currentRange.kind, currentRange.startDate, currentRange.endDate);
+    url += '?startDate=' + startDate + '&endDate=' + endDate;
+  }
+
+  const dailyPromise = apiFetch(url);
+  const weekPromise  = isDefault ? apiFetch('/api/cpp-7day') : null;
 
   try {
     const rows = await dailyPromise;
     render(rows);
     btn.disabled = false;
     btn.textContent = 'Refresh';
+
+    if (!weekPromise) return;
 
     weekPromise.then(weekRows => {
       const byId = {};
@@ -424,12 +569,14 @@ async function load() {
 function render(rows) {
   const firstValid = rows.find(r => r.date);
   if (firstValid) {
-    const d = new Date(firstValid.date + 'T12:00:00');
-    document.getElementById('heading-date').textContent =
-      d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const start = firstValid.date;
+    const end = firstValid.endDate || firstValid.date;
+    document.getElementById('heading-date').textContent = rangeLabel(currentRange.kind, start, end);
   }
   document.getElementById('heading-meta').textContent =
     'Updated ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const showWeekRow = currentRange.kind === 'yesterday';
 
   const valid = rows.filter(r => !r.error);
   const totalSpend = valid.reduce((s, r) => s + (r.spend || 0), 0);
@@ -452,6 +599,12 @@ function render(rows) {
     const cls = cppClass(row.cpp, row.cppTarget);
     const vt = vsTargetLabel(row.cpp, row.cppTarget);
 
+    const weekRowHtml = showWeekRow
+      ? '<div class="card-row"><span class="card-row-label">7D Avg</span>' +
+          '<span id="7d-' + row.id + '"><span class="card-7d-loading">loading...</span></span>' +
+        '</div>'
+      : '';
+
     return '<div class="client-card ' + cls + '">' +
       '<div class="card-name">' + row.name + '</div>' +
       '<div class="card-cpp ' + cls + '" id="cpp-' + row.id + '" data-cpp="' + (row.cpp ?? '') + '">' + (row.cpp != null ? fmt$(row.cpp) : '—') + '</div>' +
@@ -459,12 +612,48 @@ function render(rows) {
       '<div class="card-divider"></div>' +
       '<div class="card-row"><span class="card-row-label">Spend</span><span class="card-row-value">' + fmt$(row.spend) + '</span></div>' +
       '<div class="card-row"><span class="card-row-label">Purchases</span><span class="card-row-value">' + fmtInt(row.purchases) + '</span></div>' +
-      '<div class="card-row"><span class="card-row-label">7D Avg</span>' +
-        '<span id="7d-' + row.id + '"><span class="card-7d-loading">loading...</span></span>' +
-      '</div>' +
+      weekRowHtml +
     '</div>';
   }).join('');
 }
+
+// ── Filter wiring ────────────────────────────────────────────────────────────
+
+function setActivePill(kind) {
+  document.querySelectorAll('.filter-pill').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === kind);
+  });
+}
+
+document.querySelectorAll('.filter-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const kind = btn.dataset.range;
+    if (kind === 'custom') {
+      const today = todayCT();
+      const startInput = document.getElementById('custom-start');
+      const endInput = document.getElementById('custom-end');
+      if (!startInput.value) startInput.value = shiftDate(today, -7);
+      if (!endInput.value) endInput.value = shiftDate(today, -1);
+      document.getElementById('custom-range').classList.add('open');
+      setActivePill('custom');
+      return;
+    }
+    document.getElementById('custom-range').classList.remove('open');
+    currentRange = { kind, startDate: null, endDate: null };
+    setActivePill(kind);
+    load();
+  });
+});
+
+document.getElementById('custom-apply').addEventListener('click', () => {
+  const s = document.getElementById('custom-start').value;
+  const e = document.getElementById('custom-end').value;
+  if (!s || !e) return;
+  if (s > e) { alert('Start date must be on or before end date.'); return; }
+  currentRange = { kind: 'custom', startDate: s, endDate: e };
+  setActivePill('custom');
+  load();
+});
 
 if (DASH_PASSWORD) {
   load();
