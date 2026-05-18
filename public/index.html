@@ -947,14 +947,14 @@
 </div>
 
 <script>
-var DASH_PASSWORD = sessionStorage.getItem('dash_password') || '';
+var DASH_PASSWORD = localStorage.getItem('dash_password') || '';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 function apiFetch(path) {
   return fetch(path, { headers: { 'x-dash-password': DASH_PASSWORD } }).then(function(r) {
     if (r.status === 401) {
-      sessionStorage.removeItem('dash_password');
+      localStorage.removeItem('dash_password');
       showLogin();
       throw new Error('Unauthorized');
     }
@@ -975,14 +975,14 @@ function doLogin() {
     .then(function(r) {
       if (!r.ok) { document.getElementById('login-error').style.display = 'block'; return; }
       DASH_PASSWORD = pw;
-      sessionStorage.setItem('dash_password', pw);
+      localStorage.setItem('dash_password', pw);
       showLaunchpad();
     })
     .catch(function() { document.getElementById('login-error').style.display = 'block'; });
 }
 
 function signOut() {
-  sessionStorage.removeItem('dash_password');
+  localStorage.removeItem('dash_password');
   DASH_PASSWORD = '';
   showLogin();
 }
@@ -1372,7 +1372,7 @@ function apiPost(path, body) {
     body: JSON.stringify(body || {}),
   }).then(function(r) {
     if (r.status === 401) {
-      sessionStorage.removeItem('dash_password'); showLogin();
+      localStorage.removeItem('dash_password'); showLogin();
       throw new Error('Unauthorized');
     }
     return r.json().then(function(b) {
@@ -1690,35 +1690,49 @@ function renderStickerCard(row) {
   '</div>';
 }
 
+function sortStickerRows(rows) {
+  rows.sort(function(a, b) {
+    if (a.error && !b.error) return 1;
+    if (b.error && !a.error) return -1;
+    var au = (a.urgency && a.urgency.dollars != null) ? a.urgency.dollars : -1;
+    var bu = (b.urgency && b.urgency.dollars != null) ? b.urgency.dollars : -1;
+    if (au !== bu) return bu - au;
+    return (a.name || a.id || '').localeCompare(b.name || b.id || '');
+  });
+  return rows;
+}
+
 function loadSticker() {
   var grid = document.getElementById('sticker-cards');
-  Promise.all([apiFetch('/api/cpp-daily'), apiFetch('/api/cpp-7day')]).then(function(results) {
-    var daily = Array.isArray(results[0]) ? results[0] : [];
-    var week = Array.isArray(results[1]) ? results[1] : [];
 
-    var weekById = {};
-    week.forEach(function(w) { weekById[w.id] = w; });
-
+  // 1) Render fast from cpp-daily (cached, ~instant). Urgency uses yesterday's
+  //    CPP as the gap signal — good enough to sort meaningfully on first paint.
+  apiFetch('/api/cpp-daily').then(function(daily) {
+    if (!Array.isArray(daily)) daily = [];
     var rows = daily.map(function(row) {
-      var w = weekById[row.id];
-      row.weekCpp = (w && !w.error) ? w.cpp : null;
+      row.weekCpp = null;
       row.urgency = stickerUrgency(row);
       return row;
     });
-
-    // Sort: highest waste-dollars first; on-target / no-target rows fall to
-    // the bottom alphabetically. Errors sort last.
-    rows.sort(function(a, b) {
-      if (a.error && !b.error) return 1;
-      if (b.error && !a.error) return -1;
-      var au = (a.urgency && a.urgency.dollars != null) ? a.urgency.dollars : -1;
-      var bu = (b.urgency && b.urgency.dollars != null) ? b.urgency.dollars : -1;
-      if (au !== bu) return bu - au;
-      return (a.name || a.id || '').localeCompare(b.name || b.id || '');
-    });
-
-    grid.innerHTML = rows.map(renderStickerCard).join('') ||
+    grid.innerHTML = sortStickerRows(rows.slice()).map(renderStickerCard).join('') ||
       '<div class="empty-row">No sticker clients</div>';
+
+    // 2) Background: enrich with 7d CPP, then re-sort + re-render. 7d is a
+    //    slow uncached call — failure here must NOT blank the cards we just
+    //    painted, so we swallow errors and just leave the yesterday-based
+    //    urgency in place.
+    apiFetch('/api/cpp-7day').then(function(week) {
+      if (!Array.isArray(week)) return;
+      var byId = {};
+      week.forEach(function(w) { byId[w.id] = w; });
+      rows.forEach(function(row) {
+        var w = byId[row.id];
+        row.weekCpp = (w && !w.error) ? w.cpp : null;
+        row.urgency = stickerUrgency(row);
+      });
+      grid.innerHTML = sortStickerRows(rows.slice()).map(renderStickerCard).join('') ||
+        '<div class="empty-row">No sticker clients</div>';
+    }).catch(function() { /* non-fatal — first paint stays */ });
   }).catch(function(e) {
     if (e.message !== 'Unauthorized') {
       grid.innerHTML = '<div class="empty-row">Failed to load: ' + e.message + '</div>';
@@ -1782,7 +1796,7 @@ if (DASH_PASSWORD) {
   fetch('/api/auth/verify', { method: 'POST', headers: { 'x-dash-password': DASH_PASSWORD } })
     .then(function(r) {
       if (r.ok) showLaunchpad();
-      else { sessionStorage.removeItem('dash_password'); showLogin(); }
+      else { localStorage.removeItem('dash_password'); showLogin(); }
     })
     .catch(function() { showLogin(); });
 } else {

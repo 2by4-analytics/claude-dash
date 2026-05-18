@@ -317,7 +317,7 @@ function doLogin() {
       return;
     }
     DASH_PASSWORD = pw;
-    sessionStorage.setItem('dash_password', pw);
+    localStorage.setItem('dash_password', pw);
     document.getElementById('login-overlay').classList.add('hidden');
     document.getElementById('login-error').style.display = 'none';
     init();
@@ -772,10 +772,10 @@ function truncate(s,m){if(!s)return '';return s.length>m?s.slice(0,m)+'…':s;}
 function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 
 // ============================================================
-// BOOT — check sessionStorage, then server
+// BOOT — check localStorage, then server
 // ============================================================
 (function() {
-  var stored = sessionStorage.getItem('dash_password');
+  var stored = localStorage.getItem('dash_password');
   if (stored) {
     DASH_PASSWORD = stored;
     document.getElementById('login-overlay').classList.add('hidden');

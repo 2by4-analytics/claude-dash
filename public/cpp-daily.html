@@ -414,12 +414,12 @@
 </div>
 
 <script>
-var DASH_PASSWORD = sessionStorage.getItem('dash_password') || '';
+var DASH_PASSWORD = localStorage.getItem('dash_password') || '';
 
 function apiFetch(path) {
   return fetch(path, { headers: { 'x-dash-password': DASH_PASSWORD } }).then(r => {
     if (r.status === 401) {
-      sessionStorage.removeItem('dash_password');
+      localStorage.removeItem('dash_password');
       window.location.href = '/';
       throw new Error('Unauthorized');
     }
