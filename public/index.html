@@ -644,6 +644,13 @@
   .mini-error {
     font-size: 0.74rem; color: var(--over); font-weight: 600;
   }
+  .mini-urgency {
+    margin-top: -2px;
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--over);
+    font-variant-numeric: tabular-nums;
+  }
   .mini-skel {
     background: #fff; border: 1px solid var(--line-soft);
     border-radius: var(--radius-sm);
@@ -1006,6 +1013,12 @@ function showLaunchpad() {
 function fmt$(n) {
   if (n == null || isNaN(n)) return '—';
   return '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// Whole-dollar formatter used by the urgency line ("$47/day waste").
+function fmt$round(n) {
+  if (n == null || isNaN(n)) return '$0';
+  return '$' + Math.round(Number(n)).toLocaleString('en-US');
 }
 
 function renderDate() {
@@ -1627,53 +1640,85 @@ function commitRecap() {
   });
 }
 
-// ─── Sticker (yesterday CPP + 7-day avg) ─────────────────────────────────────
+// ─── Sticker (yesterday CPP + 7-day avg + creative-urgency score) ────────────
+
+// Urgency = how many dollars/day are leaking past target. Prefers 7d CPP over
+// yesterday so a one-day blip doesn't jump a client to the top of Sarah's
+// queue. Returns { dollars, label } — `label` is non-null only for the
+// special "spend but no sales" case where we don't divide by zero.
+function stickerUrgency(row) {
+  if (row.error || !row.cppTarget) return { dollars: null, label: null };
+  var spend = row.spend || 0;
+  var effectiveCpp = (row.weekCpp != null) ? row.weekCpp : row.cpp;
+  if (spend > 0 && effectiveCpp == null) {
+    // Yesterday spend was real but there are no sales to divide into → treat
+    // entire spend as wasted (and surface the reason, since this is often a
+    // tracking issue not a creative one).
+    return { dollars: spend, label: 'no sales' };
+  }
+  if (!spend || effectiveCpp == null || effectiveCpp <= row.cppTarget) {
+    return { dollars: 0, label: null };
+  }
+  return { dollars: spend * (1 - row.cppTarget / effectiveCpp), label: null };
+}
+
+function renderStickerCard(row) {
+  if (row.error) {
+    return '<div class="mini-card">' +
+      '<div class="mini-name">' + shortName(row.name || row.id) + '</div>' +
+      '<div class="mini-error">err</div>' +
+    '</div>';
+  }
+  var cls = 'none';
+  if (row.cpp != null && row.cppTarget) {
+    cls = row.cpp <= row.cppTarget ? 'good' : 'over';
+  }
+  var valEl = row.cpp != null
+    ? '<div class="mini-value ' + cls + '">' + fmt$(row.cpp) + '</div>'
+    : '<div class="mini-value none">—</div>';
+  var weekStr = (row.weekCpp != null) ? '7d ' + fmt$(row.weekCpp) : '7d —';
+  var urgEl = '';
+  if (row.urgency && row.urgency.dollars && row.urgency.dollars > 0) {
+    var txt = row.urgency.label || (fmt$round(row.urgency.dollars) + '/day waste');
+    urgEl = '<div class="mini-urgency">' + escapeHtml(txt) + '</div>';
+  }
+  return '<div class="mini-card ' + cls + '">' +
+    '<div class="mini-name">' + shortName(row.name) + '</div>' +
+    valEl +
+    '<div class="mini-sub">' + weekStr + '</div>' +
+    urgEl +
+  '</div>';
+}
 
 function loadSticker() {
   var grid = document.getElementById('sticker-cards');
+  Promise.all([apiFetch('/api/cpp-daily'), apiFetch('/api/cpp-7day')]).then(function(results) {
+    var daily = Array.isArray(results[0]) ? results[0] : [];
+    var week = Array.isArray(results[1]) ? results[1] : [];
 
-  apiFetch('/api/cpp-daily').then(function(rows) {
-    rows.sort(function(a, b) { return (a.name || a.id).localeCompare(b.name || b.id); });
+    var weekById = {};
+    week.forEach(function(w) { weekById[w.id] = w; });
 
-    grid.innerHTML = rows.map(function(row) {
-      if (row.error) {
-        return '<div class="mini-card">' +
-          '<div class="mini-name">' + shortName(row.name || row.id) + '</div>' +
-          '<div class="mini-error">err</div>' +
-        '</div>';
-      }
-      var cls = 'none';
-      if (row.cpp != null && row.cppTarget) {
-        cls = row.cpp <= row.cppTarget ? 'good' : 'over';
-      }
-      var valEl = row.cpp != null
-        ? '<div class="mini-value ' + cls + '" id="sticker-cpp-' + row.id + '">' + fmt$(row.cpp) + '</div>'
-        : '<div class="mini-value none">—</div>';
-
-      return '<div class="mini-card ' + cls + '">' +
-        '<div class="mini-name">' + shortName(row.name) + '</div>' +
-        valEl +
-        '<div class="mini-sub" id="sticker-7d-' + row.id + '">' +
-          '<span class="mini-sub-loading">7d ···</span>' +
-        '</div>' +
-      '</div>';
-    }).join('') || '<div class="empty-row">No sticker clients</div>';
-
-    apiFetch('/api/cpp-7day').then(function(weekRows) {
-      weekRows.forEach(function(w) {
-        var el = document.getElementById('sticker-7d-' + w.id);
-        if (!el) return;
-        if (w.error || w.cpp == null) {
-          el.textContent = '7d —';
-        } else {
-          el.textContent = '7d ' + fmt$(w.cpp);
-        }
-      });
-    }).catch(function() {
-      document.querySelectorAll('[id^="sticker-7d-"]').forEach(function(el) {
-        el.textContent = '7d —';
-      });
+    var rows = daily.map(function(row) {
+      var w = weekById[row.id];
+      row.weekCpp = (w && !w.error) ? w.cpp : null;
+      row.urgency = stickerUrgency(row);
+      return row;
     });
+
+    // Sort: highest waste-dollars first; on-target / no-target rows fall to
+    // the bottom alphabetically. Errors sort last.
+    rows.sort(function(a, b) {
+      if (a.error && !b.error) return 1;
+      if (b.error && !a.error) return -1;
+      var au = (a.urgency && a.urgency.dollars != null) ? a.urgency.dollars : -1;
+      var bu = (b.urgency && b.urgency.dollars != null) ? b.urgency.dollars : -1;
+      if (au !== bu) return bu - au;
+      return (a.name || a.id || '').localeCompare(b.name || b.id || '');
+    });
+
+    grid.innerHTML = rows.map(renderStickerCard).join('') ||
+      '<div class="empty-row">No sticker clients</div>';
   }).catch(function(e) {
     if (e.message !== 'Unauthorized') {
       grid.innerHTML = '<div class="empty-row">Failed to load: ' + e.message + '</div>';
@@ -1691,7 +1736,17 @@ function loadSheds() {
       grid.innerHTML = '<div class="empty-row">No sheds clients</div>';
       return;
     }
-    rows.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    // Sort by CPL desc as a rough urgency proxy until per-client cplTarget
+    // exists on the sheds upstream (then switch to the waste-dollars model
+    // used by stickerUrgency).
+    rows.sort(function(a, b) {
+      if (a.error && !b.error) return 1;
+      if (b.error && !a.error) return -1;
+      var ac = (typeof a.costPerResult === 'number') ? a.costPerResult : -1;
+      var bc = (typeof b.costPerResult === 'number') ? b.costPerResult : -1;
+      if (ac !== bc) return bc - ac;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
     grid.innerHTML = rows.map(function(row) {
       if (row.error) {
