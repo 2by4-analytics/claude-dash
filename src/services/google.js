@@ -17,6 +17,7 @@ const TZ = 'America/Chicago';
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
 const STICKER_FOLDER_ID = process.env.STICKER_CLIENTS_FOLDER_ID;
 const SHED_FOLDER_ID = process.env.SHED_CLIENTS_FOLDER_ID;
+const TEAM_FOLDER_ID = process.env.TEAM_FOLDER_ID;
 
 const CALENDAR_TTL_MS = 60 * 1000;            // 60s
 const TASKS_TTL_MS    = 10 * 60 * 1000;       // 10m
@@ -190,9 +191,10 @@ async function getClientFolders() {
   const parents = [
     { id: STICKER_FOLDER_ID, type: 'sticker' },
     { id: SHED_FOLDER_ID, type: 'shed' },
+    { id: TEAM_FOLDER_ID, type: 'team' },
   ].filter(p => p.id);
   if (!parents.length) {
-    throw new Error('STICKER_CLIENTS_FOLDER_ID and/or SHED_CLIENTS_FOLDER_ID env vars not set');
+    throw new Error('STICKER_CLIENTS_FOLDER_ID, SHED_CLIENTS_FOLDER_ID, and/or TEAM_FOLDER_ID env vars not set');
   }
 
   const all = [];
@@ -448,6 +450,7 @@ async function debugSnapshot() {
       GOOGLE_CALENDAR_ID: CALENDAR_ID,
       STICKER_CLIENTS_FOLDER_ID: STICKER_FOLDER_ID || null,
       SHED_CLIENTS_FOLDER_ID: SHED_FOLDER_ID || null,
+      TEAM_FOLDER_ID: TEAM_FOLDER_ID || null,
     },
     serviceAccountEmail: null,
     calendar: {},

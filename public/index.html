@@ -833,6 +833,15 @@
       </div>
     </section>
 
+    <!-- TEAM — per-teammate task lists (hidden until TEAM_FOLDER_ID is configured) -->
+    <section id="team-section" style="display:none;">
+      <div class="section-head">
+        <div class="section-eyebrow">Team</div>
+        <div class="section-sub">Tasks for the team</div>
+      </div>
+      <div id="team-list" class="clients-grid today-loading">Loading…</div>
+    </section>
+
     <!-- STICKER · yesterday CPP -->
     <section>
       <div class="section-head">
@@ -986,6 +995,7 @@ function showLaunchpad() {
   renderDate();
   loadMeetings();
   loadTasks();
+  loadTeam();
   loadSticker();
   loadSheds();
   loadClients();
@@ -1305,6 +1315,41 @@ function loadClients() {
   });
 }
 
+// ─── Team (teammate task lists; only renders if TEAM_FOLDER_ID is set) ──────
+
+function loadTeam() {
+  var section = document.getElementById('team-section');
+  var el = document.getElementById('team-list');
+  Promise.all([
+    apiFetch('/api/today/folders'),
+    apiFetch('/api/today/tasks'),
+  ]).then(function(results) {
+    var folders = ((results[0] && results[0].folders) || []).filter(function(f) { return f.type === 'team'; });
+    if (!folders.length) { section.style.display = 'none'; return; }
+    section.style.display = '';
+
+    var tasks = ((results[1] && results[1].tasks) || []).filter(function(t) { return t.clientType === 'team'; });
+    var byPerson = {};
+    tasks.forEach(function(t) {
+      var name = t.client || '(unknown)';
+      if (!byPerson[name]) byPerson[name] = [];
+      byPerson[name].push(t);
+    });
+    Object.keys(byPerson).forEach(function(n) { byPerson[n] = sortTasks(byPerson[n]); });
+
+    folders.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    el.className = 'clients-grid';
+    el.innerHTML = folders.map(function(f) {
+      return renderClientCard(f, byPerson[f.name] || []);
+    }).join('');
+  }).catch(function(e) {
+    if (e.message === 'Unauthorized') return;
+    section.style.display = '';
+    el.className = 'clients-grid today-error';
+    el.textContent = e.message || 'Failed to load team';
+  });
+}
+
 // ─── Task mutations ──────────────────────────────────────────────────────────
 
 function apiPost(path, body) {
@@ -1572,6 +1617,7 @@ function commitRecap() {
       closeModal();
       loadTasks();
       loadClients();
+      loadTeam();
     }, 700);
   }).catch(function(e) {
     commitBtn.disabled = false;
