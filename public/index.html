@@ -176,6 +176,20 @@
     letter-spacing: 0.16em; text-transform: uppercase;
     color: var(--slate-2);
   }
+  .tasks-refresh {
+    margin-left: 8px;
+    background: transparent;
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    width: 22px; height: 22px;
+    font-size: 13px; line-height: 1;
+    color: var(--slate-2);
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .tasks-refresh:hover { background: var(--line-soft); color: var(--navy); }
+  .tasks-refresh.spinning { animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .today-content {
     font-family: "Instrument Serif", serif;
     font-weight: 400; font-style: italic;
@@ -272,9 +286,10 @@
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
   }
-  .due-chip.over { background: var(--over-soft); color: var(--over); }
-  .due-chip.today { background: rgba(245, 158, 11, 0.14); color: #b45309; }
-  .due-chip.future { background: rgba(15, 23, 42, 0.06); color: var(--slate-2); }
+  .due-chip.over   { background: var(--over-soft); color: var(--over); }
+  .due-chip.today  { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+  .due-chip.soon   { background: rgba(249, 115, 22, 0.14); color: #ea580c; }
+  .due-chip.future { background: rgba(34, 197, 94, 0.14);  color: #15803d; }
 
   /* ── Grouped task list ── */
   .task-type-head {
@@ -834,7 +849,12 @@
           <div id="today-meetings" class="today-loading">Loading…</div>
         </div>
         <div class="today-block">
-          <div class="today-label">Tasks</div>
+          <div class="today-label">
+            Tasks
+            <button type="button" id="tasks-refresh-btn" class="tasks-refresh"
+                    title="Reload tasks from Drive" aria-label="Refresh tasks"
+                    onclick="refreshTasks(this)">↻</button>
+          </div>
           <div id="today-tasks" class="today-loading">Loading…</div>
         </div>
       </div>
@@ -1125,7 +1145,10 @@ function nextTaskId() { return 't' + (++_taskUid); }
 function renderTaskRow(t, clientName) {
   var chip = '';
   if (t.dueDate) {
-    var cls = t.isOverdue ? 'over' : (t.isDueToday ? 'today' : 'future');
+    var cls = t.isOverdue ? 'over'
+            : t.isDueToday ? 'today'
+            : t.isDueSoon ? 'soon'
+            : 'future';
     chip = '<span class="due-chip ' + cls + '">' + escapeHtml(fmtDueChip(t.dueDate)) + '</span>';
   }
   var urgent = t.urgent ? '<span class="task-urgent">!!</span>' : '';
@@ -1154,6 +1177,17 @@ function rankClientGroup(tasks) {
   if (s.hasOverdue) return 0;
   if (s.hasToday) return 1;
   return 2;
+}
+
+function refreshTasks(btn) {
+  if (btn) btn.classList.add('spinning');
+  apiPost('/api/today/tasks/refresh', {}).then(function() {
+    return loadTasks();
+  }).catch(function() {
+    // loadTasks() renders its own error state; nothing to do here.
+  }).finally(function() {
+    if (btn) btn.classList.remove('spinning');
+  });
 }
 
 function loadTasks() {

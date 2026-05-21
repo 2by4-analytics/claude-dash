@@ -729,6 +729,19 @@ router.post('/today/tasks/add', async (req, res) => {
   }
 });
 
+// POST /api/today/tasks/refresh
+// Bust the tasks cache and return a fresh snapshot. No body.
+router.post('/today/tasks/refresh', async (req, res) => {
+  try {
+    googleSvc.invalidateTasksCache();
+    const { tasks, asOf } = await googleSvc.getOpenTasks();
+    res.json({ tasks, asOf });
+  } catch (err) {
+    console.error('[today/tasks/refresh]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/today/upload  { client, filename, fileMimeType, fileBase64?, fileText?, todayDate? }
 // Proxy to Brain's meeting-recap agent. Returns the draft for user review.
 // Does NOT write anything yet — `/today/upload/commit` is the second step.

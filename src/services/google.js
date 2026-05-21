@@ -118,6 +118,14 @@ function compareYmd(a, b) {
   return a.day - b.day;
 }
 
+// Signed integer days from `b` to `a`. Anchored to UTC noon so DST shifts can't
+// flip the result. Inputs are the {year,month,day} objects produced by
+// `inferDueDate` / `todayInCt`.
+function daysBetweenYmd(a, b) {
+  const noon = (d) => Date.UTC(d.year, d.month - 1, d.day, 12);
+  return Math.round((noon(a) - noon(b)) / 86400000);
+}
+
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 
 let calendarCache = { data: null, ts: 0 };
@@ -346,12 +354,13 @@ function parseTaskLine(rawLine, client) {
   // Trim any trailing/leading dashes left behind
   body = body.replace(/[—–-]\s*$/, '').replace(/^\s*[—–-]\s*/, '').trim();
 
-  let isOverdue = false, isDueToday = false;
+  let isOverdue = false, isDueToday = false, isDueSoon = false;
   if (dueDate) {
     const today = todayInCt();
-    const cmp = compareYmd(dueDate, today);
-    isOverdue = cmp < 0;
-    isDueToday = cmp === 0;
+    const diff = daysBetweenYmd(dueDate, today);
+    isOverdue  = diff < 0;
+    isDueToday = diff === 0;
+    isDueSoon  = diff >= 1 && diff <= 2;
   }
 
   return {
@@ -364,6 +373,7 @@ function parseTaskLine(rawLine, client) {
     dueDate: dueDate ? ymdInCt(dueDate) : null,
     isOverdue,
     isDueToday,
+    isDueSoon,
   };
 }
 
