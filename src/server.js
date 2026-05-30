@@ -12,6 +12,20 @@ app.use(cors());
 // 25MB ceiling so meeting-notes uploads (PDFs base64-encoded) fit comfortably.
 app.use(express.json({ limit: '25mb' }));
 
+// ─── Keep Dash + Launchpad out of search engines ───────────────────────────
+// Internal tool that was getting indexed by Google. X-Robots-Tag on every
+// response is the authoritative noindex signal; /robots.txt blocks future
+// crawling. Both run before dashAuth and the `*` catch-all so the header
+// applies to every page/asset and robots.txt isn't swallowed by the redirect.
+// Already-indexed URLs need a one-time GSC Removals request to clear now.
+app.use((req, res, next) => {
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+});
+
 // ─── Dashboard auth verification endpoint ──────────────────────────────────
 // Used by the login screen to validate the password
 app.post('/api/auth/verify', (req, res) => {
