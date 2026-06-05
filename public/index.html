@@ -715,6 +715,62 @@
   }
   .tool-btn:hover .tool-btn-arrow { color: var(--amber); transform: translateX(2px); }
 
+  /* ── Agents ── */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 14px;
+  }
+  .agent-card {
+    background: #fff;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-md);
+    padding: 20px 22px;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; gap: 12px;
+    transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+  .agent-card:hover { transform: translateY(-1px); border-color: var(--amber); box-shadow: var(--shadow-md); }
+  .agent-card-top { display: flex; align-items: flex-start; gap: 12px; }
+  .agent-emoji {
+    font-size: 1.4rem; line-height: 1;
+    width: 42px; height: 42px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--amber-soft); border-radius: 12px;
+  }
+  .agent-name { font-weight: 700; font-size: 1rem; color: var(--navy); }
+  .agent-tagline { font-size: 0.82rem; color: var(--slate); line-height: 1.4; margin-top: 3px; }
+  .agent-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+  .agent-chip {
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em;
+    padding: 3px 9px; border-radius: 999px;
+    background: rgba(15, 23, 42, 0.05); color: var(--slate);
+  }
+  .agent-chip.mcp { background: var(--amber-soft); color: #b45309; }
+  .agent-chip.model { color: var(--slate-2); text-transform: lowercase; }
+  .agent-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-top: auto; padding-top: 2px;
+  }
+  .agent-tools-note { font-size: 0.72rem; color: var(--slate-2); letter-spacing: 0.02em; }
+  .agent-work-btn {
+    background: var(--navy); color: #fff;
+    border-radius: 999px; padding: 8px 16px;
+    font-size: 0.82rem; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
+    transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  }
+  .agent-work-btn:hover { background: #16203a; box-shadow: 0 10px 24px rgba(15,23,42,0.18); }
+  .agent-work-btn .arr { transition: transform 160ms ease; }
+  .agent-card:hover .agent-work-btn .arr { transform: translateX(2px); }
+  .agent-skel {
+    background: #fff; border: 1px solid var(--line-soft);
+    border-radius: var(--radius-md); height: 156px;
+    box-shadow: var(--shadow-sm);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
   /* ── Clients placeholder ── */
   .clients-placeholder {
     font-family: "Instrument Serif", serif;
@@ -793,6 +849,7 @@
     .today-grid { grid-template-columns: 1fr; }
     .mini-card, .mini-skel { width: calc(50% - 6px); }
     .tool-grid { grid-template-columns: 1fr; }
+    .agent-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -893,6 +950,19 @@
       <div class="mini-cards" id="sheds-cards">
         <div class="mini-skel"></div>
         <div class="mini-skel"></div>
+      </div>
+    </section>
+
+    <!-- AGENTS — open a cloud Claude Code session scoped to an agent (any device) -->
+    <section>
+      <div class="section-head">
+        <div class="section-eyebrow">Agents <span class="dim">· open in claude.ai/code</span></div>
+        <a class="section-link" href="https://github.com/2by4-analytics/2by4-agents" target="_blank" rel="noopener">Repo →</a>
+      </div>
+      <div class="agent-grid" id="agents-list">
+        <div class="agent-skel"></div>
+        <div class="agent-skel"></div>
+        <div class="agent-skel"></div>
       </div>
     </section>
 
@@ -1027,6 +1097,7 @@ function showLaunchpad() {
   loadSticker();
   loadSheds();
   loadClients();
+  loadAgents();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1081,6 +1152,51 @@ function fmtDueChip(dueDate) {
   if (parts.length !== 3) return dueDate;
   var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ─── Agents (open a cloud Claude Code session scoped to an agent) ────────────
+
+function loadAgents() {
+  var el = document.getElementById('agents-list');
+  apiFetch('/api/agents').then(function(data) {
+    var repo = (data && data.repo) || '2by4-analytics/2by4-agents';
+    var agents = (data && data.agents) || [];
+    el.className = 'agent-grid';
+    if (!agents.length) {
+      el.innerHTML = '<div class="empty-row">No agents configured</div>';
+      return;
+    }
+    el.innerHTML = agents.map(function(a) {
+      var url = 'https://claude.ai/code?repositories=' + encodeURIComponent(repo) +
+        '&prompt=' + encodeURIComponent(a.prompt || ('Use the ' + a.name + ' agent.'));
+      var chips = '';
+      (a.mcp || []).forEach(function(m) {
+        chips += '<span class="agent-chip mcp">' + escapeHtml(m) + '</span>';
+      });
+      chips += '<span class="agent-chip model">' + escapeHtml(a.model || 'inherit') + '</span>';
+      var note = (a.tools && a.tools.length) ? (a.tools.length + ' tools') : '';
+      if (a.mcp && a.mcp.length) note += (note ? ' · ' : '') + a.mcp.length + ' MCP';
+      return '<div class="agent-card">' +
+        '<div class="agent-card-top">' +
+          '<span class="agent-emoji">' + escapeHtml(a.emoji || '🤖') + '</span>' +
+          '<div>' +
+            '<div class="agent-name">' + escapeHtml(a.label || a.name) + '</div>' +
+            '<div class="agent-tagline">' + escapeHtml(a.tagline || '') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="agent-meta">' + chips + '</div>' +
+        '<div class="agent-foot">' +
+          '<span class="agent-tools-note">' + escapeHtml(note) + '</span>' +
+          '<a class="agent-work-btn" href="' + url + '" target="_blank" rel="noopener" ' +
+            'title="Opens a claude.ai/code session scoped to this agent">Work <span class="arr">→</span></a>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }).catch(function(e) {
+    if (e.message === 'Unauthorized') return;
+    el.className = 'agent-grid';
+    el.innerHTML = '<div class="empty-row">' + escapeHtml(e.message || 'Failed to load agents') + '</div>';
+  });
 }
 
 // ─── Today: Meetings ─────────────────────────────────────────────────────────

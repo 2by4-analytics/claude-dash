@@ -1,0 +1,60 @@
+{
+  "repo": "2by4-analytics/2by4-agents",
+  "generatedFrom": "/Users/alan/2by4-agents/.claude/agents",
+  "agents": [
+    {
+      "name": "facebook-ads-expert",
+      "label": "Facebook Ads Expert",
+      "emoji": "📣",
+      "tagline": "Meta strategist across both verticals — ecom ROAS/CAPI and lead-gen CPL/quality. Reads + appends the playbook ledgers.",
+      "tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Bash",
+        "Grep",
+        "WebFetch",
+        "WebSearch"
+      ],
+      "mcp": [
+        "Meta Ads",
+        "ClickFunnels"
+      ],
+      "model": "inherit",
+      "prompt": "Use the facebook-ads-expert agent. Your two playbook ledgers live in this repo at clients/facebook-ads-playbook-ecom.md (sticker / ecom) and clients/facebook-ads-playbook-leadgen.md (sheds / services) — read the relevant one first, then I'll give you the account or the task."
+    },
+    {
+      "name": "google-ads-expert",
+      "label": "Google Ads Expert",
+      "emoji": "🔍",
+      "tagline": "Google Ads for lead-gen sheds + services — structure, bid strategy, conversion tracking, PMax vs Search.",
+      "tools": [
+        "Read",
+        "Edit",
+        "Bash",
+        "Grep",
+        "WebFetch",
+        "WebSearch"
+      ],
+      "mcp": [],
+      "model": "inherit",
+      "prompt": "Use the google-ads-expert agent. I'll give you the Google Ads account and the task next."
+    },
+    {
+      "name": "wp-debugger",
+      "label": "WP Debugger",
+      "emoji": "🛠",
+      "tagline": "WordPress debugging across the client sites — Elementor cache, REST quirks, iframe + CPT landmines.",
+      "tools": [
+        "Read",
+        "Edit",
+        "Bash",
+        "Grep",
+        "WebFetch"
+      ],
+      "mcp": [],
+      "model": "inherit",
+      "prompt": "Use the wp-debugger agent. I'll describe the WordPress site and the issue next."
+    }
+  ]
+}
