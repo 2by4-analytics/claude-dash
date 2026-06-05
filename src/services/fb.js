@@ -9,8 +9,11 @@ const BASE_URL = `https://graph.facebook.com/${FB_API_VERSION}`;
  */
 async function getFbInsights(accessToken, adAccountId, dateStart, dateStop) {
   const fields = [
+    'campaign_id',
     'campaign_name',
+    'adset_id',
     'adset_name',
+    'ad_id',
     'ad_name',
     'spend',
     'impressions',
@@ -57,7 +60,7 @@ async function getEntityStatuses(accessToken, adAccountId) {
   async function fetchAll(endpoint) {
     const all = [];
     let url = `${BASE_URL}/${adAccountId}/${endpoint}`;
-    const params = { access_token: accessToken, fields: 'name,effective_status', limit: 500 };
+    const params = { access_token: accessToken, fields: 'id,effective_status', limit: 500 };
     try {
       while (url) {
         const res = await axios.get(url, { params: url.includes('?') ? {} : params });
@@ -77,10 +80,11 @@ async function getEntityStatuses(accessToken, adAccountId) {
     fetchAll('ads'),
   ]);
 
+  // Keyed by ID — avoids name-matching issues with special chars or renamed entities
   return {
-    campaigns: Object.fromEntries(campaigns.map(c => [c.name, c.effective_status])),
-    adsets: Object.fromEntries(adsets.map(a => [a.name, a.effective_status])),
-    ads: Object.fromEntries(ads.map(a => [a.name, a.effective_status])),
+    campaigns: Object.fromEntries(campaigns.map(c => [c.id, c.effective_status])),
+    adsets: Object.fromEntries(adsets.map(a => [a.id, a.effective_status])),
+    ads: Object.fromEntries(ads.map(a => [a.id, a.effective_status])),
   };
 }
 
@@ -114,19 +118,19 @@ async function getFbHierarchy(accessToken, adAccountId, dateStart, dateStop, tim
     const spend = parseFloat(row.spend || 0);
 
     if (!campaigns[campaignKey]) {
-      campaigns[campaignKey] = { name: campaignKey, spend: 0, effective_status: statusMap.campaigns[campaignKey] || null, adsets: {} };
+      campaigns[campaignKey] = { name: campaignKey, spend: 0, effective_status: statusMap.campaigns[row.campaign_id] || null, adsets: {} };
     }
     campaigns[campaignKey].spend += spend;
 
     const camp = campaigns[campaignKey];
     if (!camp.adsets[adsetKey]) {
-      camp.adsets[adsetKey] = { name: adsetKey, spend: 0, effective_status: statusMap.adsets[adsetKey] || null, ads: {} };
+      camp.adsets[adsetKey] = { name: adsetKey, spend: 0, effective_status: statusMap.adsets[row.adset_id] || null, ads: {} };
     }
     camp.adsets[adsetKey].spend += spend;
 
     const adset = camp.adsets[adsetKey];
     if (!adset.ads[adKey]) {
-      adset.ads[adKey] = { name: adKey, spend: 0, effective_status: statusMap.ads[adKey] || null };
+      adset.ads[adKey] = { name: adKey, spend: 0, effective_status: statusMap.ads[row.ad_id] || null };
     }
     adset.ads[adKey].spend += spend;
   }
