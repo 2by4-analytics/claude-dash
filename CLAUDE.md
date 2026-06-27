@@ -213,6 +213,7 @@ FB and CoC join by UTMs:
 - **Sales:** `GET /order/query/?orderStatus=COMPLETE&orderType=NEW_SALE&campaignId=X`
 - **Partials:** `GET /order/query/?orderStatus=PARTIAL&orderType=NEW_SALE&campaignId=X`
 - **Declines:** `GET /transactions/query/?txnType=SALE&responseType=SOFT_DECLINE` → filter client-side: `billingCycleNumber === 1` only, deduplicate by `orderId`. Note: `orderType=NEW_SALE` filter is ignored by the transactions endpoint — must filter client-side.
+- **Lead import flow (`POST /api/coc/lead`):** Import Click `GET /landers/clicks/import/` → `message.sessionId`, then Import Lead `GET /leads/import/` with that `sessionId`. Click import **requires `pageType`** — valid values: `presellPage`, `catalogPage`, `leadPage`, `checkoutPage`, `downsell/upsellPage*`, `thankyouPage` — we send `leadPage`. The API user needs **Import Lead + Import Click** endpoint access (the read-only reporting user does NOT by default).
 
 ---
 
