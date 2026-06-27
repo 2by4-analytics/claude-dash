@@ -67,7 +67,7 @@ router.post('/coc/lead', async (req, res) => {
     try {
       const axios = require('axios');
       const r = await axios.get('https://api.checkoutchamp.com/landers/clicks/import/', {
-        params: { loginId: creds.loginId, password: creds.password, campaignId, requestUri: '/quiz', ...(ipAddress ? { ipAddress } : {}) },
+        params: { loginId: creds.loginId, password: creds.password, campaignId, pageType: 'LANDING', requestUri: '/quiz', ...(ipAddress ? { ipAddress } : {}) },
       });
       return res.json({ debug: r.data });
     } catch (e) {
