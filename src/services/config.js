@@ -52,4 +52,18 @@ function clearClientCache() {
   _clients = null;
 }
 
-module.exports = { getClients, getClientById, getClientTimezone, clearClientCache };
+/**
+ * Find CoC creds (loginId/password) for a given API loginId, reused from the
+ * existing per-client config so a shared API user's password (e.g.
+ * `brianreports-api`) isn't duplicated into separate env vars.
+ */
+function getCocCredsByLoginId(loginId) {
+  for (const c of getClients()) {
+    if (c.cocLoginId === loginId && c.cocPassword) {
+      return { loginId: c.cocLoginId, password: c.cocPassword };
+    }
+  }
+  return null;
+}
+
+module.exports = { getClients, getClientById, getClientTimezone, clearClientCache, getCocCredsByLoginId };

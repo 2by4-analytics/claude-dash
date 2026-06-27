@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const { getClients, getClientById, getClientTimezone } = require('../services/config');
+const { getClients, getClientById, getClientTimezone, getCocCredsByLoginId } = require('../services/config');
 const { getFbHierarchy } = require('../services/fb');
 const { getCocHierarchy, getCocCampaignTotals, importClick, importLead } = require('../services/coc');
 const { mergeHierarchy } = require('../services/merger');
@@ -41,13 +41,15 @@ router.get('/agents', (req, res) => {
 // partial lead (Import Click → Import Lead), so leads aren't lost when checkout
 // is abandoned. The lander (Vercel, no static egress IP) proxies through here
 // because all CoC access must originate from Dash's whitelisted IP.
-// Gated by dashAuth. Creds in BC_COC_LOGIN_ID / BC_COC_PASSWORD / BC_COC_CAMPAIGN_ID.
+// Gated by dashAuth. Reuses the existing `brianreports-api` CoC creds from
+// CLIENTS (already whitelisted); BC funnel = campaignId 2. Both overridable
+// via BC_COC_LOGIN_ID / BC_COC_CAMPAIGN_ID.
 router.post('/coc/lead', async (req, res) => {
-  const loginId = process.env.BC_COC_LOGIN_ID;
-  const password = process.env.BC_COC_PASSWORD;
-  const campaignId = process.env.BC_COC_CAMPAIGN_ID;
-  // Not configured yet → tell the caller so it falls back to prefill-only.
-  if (!loginId || !password || !campaignId) {
+  const loginId = process.env.BC_COC_LOGIN_ID || 'brianreports-api';
+  const campaignId = process.env.BC_COC_CAMPAIGN_ID || '2';
+  const creds = getCocCredsByLoginId(loginId);
+  // No matching creds in config → tell the caller so it falls back to prefill-only.
+  if (!creds) {
     return res.json({ ok: false, configured: false });
   }
 
@@ -62,8 +64,8 @@ router.post('/coc/lead', async (req, res) => {
 
   try {
     // Open a session so the lead (and any later order) are linked in CoC.
-    const sessionId = await importClick(loginId, password, campaignId, { ipAddress });
-    await importLead(loginId, password, campaignId, {
+    const sessionId = await importClick(creds.loginId, creds.password, campaignId, { ipAddress });
+    await importLead(creds.loginId, creds.password, campaignId, {
       firstName, lastName, emailAddress, phoneNumber, ipAddress,
       sessionId: sessionId || undefined,
       custom: answers || undefined,
