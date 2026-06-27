@@ -68,6 +68,14 @@ SHED_CLIENTS_FOLDER_ID=            # Drive parent folder of shed client subfolde
                                    # checkboxes, adding tasks, and saving meeting recaps all
                                    # write to Drive. Sharing the parent `2by4` folder as Editor
                                    # cascades to both.
+
+# Bagger's Corner lead capture (POST /api/coc/lead)
+BC_COC_LOGIN_ID=                   # Checkout Champ API user
+BC_COC_PASSWORD=                   # that API user's password
+BC_COC_CAMPAIGN_ID=                # the Bagger's Corner funnel's CoC campaign ID
+                                   # CoC must whitelist Dash's outbound IP for the
+                                   # Import APIs. Endpoint is inert (configured:false)
+                                   # until all three are set.
 ```
 
 To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
@@ -94,6 +102,7 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `POST /api/today/upload` | Body `{ client, filename, fileBase64?, fileText?, fileMimeType?, todayDate? }` — proxies to Brain's meeting-recap agent, returns draft `{ recapMarkdown, openItems[], suggestedFilename }` for user review |
 | `POST /api/today/upload/commit` | Body `{ client, filename, recapMarkdown, openItems[] }` — writes the recap to `<client>/meetings/<filename>.md` and appends approved items to CLAUDE.md |
 | `GET /api/today/debug` | Diagnostic snapshot — calendar accessibility, folders, parsed task sections |
+| `POST /api/coc/lead` | Body `{ firstName, lastName, emailAddress, phoneNumber, answers?, ipAddress? }` — Bagger's Corner opt-in → CoC partial lead (Import Click → Import Lead). Lander proxies here so CoC is only hit from Dash's whitelisted IP. Uses `BC_COC_*` env. Returns `{ ok, sessionId }`; `configured:false` if env unset |
 | `GET /api/debug/coc/:clientId?campaignId&startDate&endDate` | Raw CoC responses |
 | `GET /api/debug/orders/:clientId?campaignId&startDate&endDate` | Order status/type breakdown |
 | `GET /api/debug/revenue/:clientId?campaignId&startDate&endDate` | Per-order revenue breakdown |

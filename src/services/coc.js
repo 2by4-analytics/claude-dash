@@ -236,4 +236,55 @@ async function getCocHierarchy(loginId, password, campaignId, dateStart, dateSto
   return results;
 }
 
-module.exports = { getCocHierarchy, getCocCampaignTotals };
+/**
+ * Import Click — opens a CoC session and returns its sessionId, which links a
+ * later lead/order to this visit. Best-effort: returns null on any failure.
+ */
+async function importClick(loginId, password, campaignId, { ipAddress } = {}) {
+  try {
+    const params = {
+      loginId,
+      password,
+      campaignId,
+      requestUri: '/quiz',
+      ...(ipAddress ? { ipAddress } : {}),
+    };
+    const r = await axios.get(`${COC_BASE}/landers/clicks/import/`, { params });
+    if (r.data?.result !== 'SUCCESS') {
+      console.error('COC importClick non-success:', JSON.stringify(r.data?.message));
+      return null;
+    }
+    return r.data.message?.sessionId || null;
+  } catch (err) {
+    console.error('COC importClick error:', err.response?.data?.message || err.message);
+    return null;
+  }
+}
+
+/**
+ * Import Lead — creates a partial lead in CoC even if checkout is abandoned.
+ * Throws on a non-SUCCESS result so the caller can decide how to degrade.
+ * `lead`: { firstName, lastName, emailAddress, phoneNumber, ipAddress?, sessionId?, custom? }
+ */
+async function importLead(loginId, password, campaignId, lead) {
+  const params = {
+    loginId,
+    password,
+    campaignId,
+    firstName: lead.firstName || '',
+    lastName: lead.lastName || '',
+    emailAddress: lead.emailAddress || '',
+    phoneNumber: lead.phoneNumber || '',
+    ...(lead.sessionId ? { sessionId: lead.sessionId } : {}),
+    ...(lead.ipAddress ? { ipAddress: lead.ipAddress } : {}),
+    ...(lead.custom || {}),
+  };
+  const r = await axios.get(`${COC_BASE}/leads/import/`, { params });
+  if (r.data?.result !== 'SUCCESS') {
+    const msg = typeof r.data?.message === 'string' ? r.data.message : JSON.stringify(r.data?.message);
+    throw new Error(`COC lead import failed: ${msg}`);
+  }
+  return r.data;
+}
+
+module.exports = { getCocHierarchy, getCocCampaignTotals, importClick, importLead };
