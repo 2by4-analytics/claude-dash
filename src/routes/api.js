@@ -62,19 +62,6 @@ router.post('/coc/lead', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'missing_contact' });
   }
 
-  // TEMP debug: surface why importClick returns no sessionId.
-  if (req.query.debugclick) {
-    try {
-      const axios = require('axios');
-      const r = await axios.get('https://api.checkoutchamp.com/landers/clicks/import/', {
-        params: { loginId: creds.loginId, password: creds.password, campaignId, pageType: 'leadPage', requestUri: '/quiz', ...(ipAddress ? { ipAddress } : {}) },
-      });
-      return res.json({ debug: r.data });
-    } catch (e) {
-      return res.json({ debug: 'ERR', detail: e.response?.data || e.message });
-    }
-  }
-
   try {
     // Open a session so the lead (and any later order) are linked in CoC.
     const sessionId = await importClick(creds.loginId, creds.password, campaignId, { ipAddress });
