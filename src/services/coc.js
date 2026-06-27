@@ -246,7 +246,7 @@ async function importClick(loginId, password, campaignId, { ipAddress } = {}) {
       loginId,
       password,
       campaignId,
-      pageType: 'LANDING',
+      pageType: 'leadPage',
       requestUri: '/quiz',
       ...(ipAddress ? { ipAddress } : {}),
     };
