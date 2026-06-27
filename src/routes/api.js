@@ -77,25 +77,6 @@ router.post('/coc/lead', async (req, res) => {
   }
 });
 
-// TEMP: look up the BC test leads so they can be deleted in the CoC UI.
-router.get('/coc/lookup', async (req, res) => {
-  const creds = getCocCredsByLoginId('brianreports-api');
-  if (!creds) return res.json({ error: 'no creds' });
-  const base = { loginId: creds.loginId, password: creds.password, campaignId: '2', startDate: '6/20/26', endDate: '6/28/26', resultsPerPage: 200 };
-  const out = {};
-  for (const [name, extra] of [['leads/query', {}], ['order/query (PARTIAL)', { orderStatus: 'PARTIAL' }]]) {
-    try {
-      const path = name.split(' ')[0];
-      const r = await axios.get(`https://api.checkoutchamp.com/${path}/`, { params: { ...base, ...extra } });
-      const rows = (r.data?.message?.data || []).filter(x => (x.emailAddress || '').includes('2by4llc.com'));
-      out[name] = rows.map(x => ({ orderId: x.orderId, leadId: x.leadId, emailAddress: x.emailAddress, firstName: x.firstName, lastName: x.lastName, status: x.orderStatus }));
-    } catch (e) {
-      out[name] = { error: e.response?.data?.message || e.message };
-    }
-  }
-  res.json(out);
-});
-
 // GET /api/dashboard/:clientId?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 router.get('/dashboard/:clientId', async (req, res) => {
   const { clientId } = req.params;
