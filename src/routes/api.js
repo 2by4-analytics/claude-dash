@@ -73,7 +73,7 @@ router.post('/coc/lead', async (req, res) => {
     res.json({ ok: true, sessionId: sessionId || null });
   } catch (err) {
     console.error('[coc/lead] import failed:', err.message);
-    res.status(502).json({ ok: false, error: 'coc_failed', detail: err.message });
+    res.status(502).json({ ok: false, error: 'coc_failed' });
   }
 });
 
