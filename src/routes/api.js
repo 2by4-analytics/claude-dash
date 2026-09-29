@@ -253,6 +253,29 @@ router.get('/debug/orders/:clientId', async (req, res) => {
   });
 });
 
+// GET /api/debug/coc-campaign/:clientId?campaignId=X
+// Raw CoC campaign/query — products, prices, billing cycles, shipping. Read-only.
+// Pass ?loginId=Y instead of a real clientId (use "-") to query with any
+// configured CoC API user, e.g. brianreports-api for the Happy Baker campaign.
+router.get('/debug/coc-campaign/:clientId', async (req, res) => {
+  const { campaignId, loginId } = req.query;
+  if (!campaignId) return res.status(400).json({ error: 'Required: campaignId' });
+
+  const creds = loginId
+    ? getCocCredsByLoginId(loginId)
+    : (() => { const c = getClientById(req.params.clientId); return c && { loginId: c.cocLoginId, password: c.cocPassword }; })();
+  if (!creds || !creds.password) return res.status(404).json({ error: 'CoC credentials not found' });
+
+  try {
+    const r = await axios.get('https://api.checkoutchamp.com/campaign/query/', {
+      params: { loginId: creds.loginId, password: creds.password, campaignId },
+    });
+    res.json(r.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Revenue debug endpoint
 router.get('/debug/revenue/:clientId', async (req, res) => {
   try {

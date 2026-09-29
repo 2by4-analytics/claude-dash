@@ -104,6 +104,7 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `GET /api/debug/coc/:clientId?campaignId&startDate&endDate` | Raw CoC responses |
 | `GET /api/debug/orders/:clientId?campaignId&startDate&endDate` | Order status/type breakdown |
 | `GET /api/debug/revenue/:clientId?campaignId&startDate&endDate` | Per-order revenue breakdown |
+| `GET /api/debug/coc-campaign/:clientId?campaignId[&loginId]` | Raw CoC `campaign/query` — products, prices, billing cycles, shipping. `clientId` `-` + `loginId=` queries with any configured CoC API user |
 
 Auth: every `/api/*` route is gated by `dashAuth` (header `x-dash-password` or `?pw=` query param).
 
