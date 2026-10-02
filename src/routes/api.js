@@ -276,6 +276,27 @@ router.get('/debug/coc-campaign/:clientId', async (req, res) => {
   }
 });
 
+// GET /api/coc-relay/:resource?loginId=X&campaignId=..&startDate=M/D/YY&...
+// Read-only CoC passthrough for callers without a whitelisted IP (CoC's API
+// allowlists by IP; Vercel has no static egress). Used by the Happy Bakers
+// dashboard. Only query endpoints are allowed; creds come from CLIENTS.
+const COC_RELAY_RESOURCES = new Set(['order', 'transactions', 'purchase', 'campaign']);
+router.get('/coc-relay/:resource', async (req, res) => {
+  const { resource } = req.params;
+  if (!COC_RELAY_RESOURCES.has(resource)) return res.status(400).json({ error: 'resource not allowed' });
+  const { loginId, password, ...params } = req.query;
+  const creds = getCocCredsByLoginId(loginId);
+  if (!creds || !creds.password) return res.status(404).json({ error: 'CoC credentials not found' });
+  try {
+    const r = await axios.get(`https://api.checkoutchamp.com/${resource}/query/`, {
+      params: { ...params, loginId: creds.loginId, password: creds.password },
+    });
+    res.json(r.data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // Revenue debug endpoint
 router.get('/debug/revenue/:clientId', async (req, res) => {
   try {
