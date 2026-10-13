@@ -86,7 +86,7 @@ router.post('/coc/lead', async (req, res) => {
 // CoC param object minus credentials; card data passes through untouched and is
 // never logged. Campaign is fixed (HB_COC_CAMPAIGN_ID, default 15).
 const HB_ORDER_FIELDS = new Set([
-  'orderId', 'sessionId', 'ipAddress', 'salesUrl', 'firstName', 'lastName', 'companyName', 'emailAddress', 'phoneNumber',
+  'orderId', 'sessionId', 'ipAddress', 'salesUrl', 'redirectsTo', 'errorRedirectsTo', 'firstName', 'lastName', 'companyName', 'emailAddress', 'phoneNumber',
   'address1', 'address2', 'city', 'state', 'postalCode', 'country', 'billShipSame',
   'shipFirstName', 'shipLastName', 'shipAddress1', 'shipAddress2', 'shipCity', 'shipState', 'shipPostalCode', 'shipCountry',
   'paySource', 'cardNumber', 'cardMonth', 'cardYear', 'cardSecurityCode', 'couponCode', 'affId', 'sourceValue1', 'sourceValue2',
