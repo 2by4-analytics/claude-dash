@@ -3,7 +3,7 @@ const router = express.Router();
 const axios = require('axios');
 const { getClients, getClientById, getClientTimezone, getCocCredsByLoginId } = require('../services/config');
 const { getFbHierarchy } = require('../services/fb');
-const { getCocHierarchy, getCocCampaignTotals, importClick, importLead } = require('../services/coc');
+const { getCocHierarchy, getCocCampaignTotals, importClick, importLead, importOrder, importUpsale } = require('../services/coc');
 const { mergeHierarchy } = require('../services/merger');
 const googleSvc = require('../services/google');
 const { toggleCheckboxLine, appendOpenItem, appendOpenItems } = require('../services/markdown');
@@ -74,6 +74,60 @@ router.post('/coc/lead', async (req, res) => {
   } catch (err) {
     console.error('[coc/lead] import failed:', err.message);
     res.status(502).json({ ok: false, error: 'coc_failed' });
+  }
+});
+
+// POST /api/coc/order and /api/coc/upsale — Happy Bakers site (happybakerhq.com,
+// Lovable server functions, no static egress IP) creates Checkout Champ orders
+// through Dash because CoC requires an IP whitelist on every API user. Gated by
+// its own secret (HB_ORDER_SECRET) instead of dashAuth so the Dash password never
+// has to live in the site. Creds = the `happybaker-site-api` CoC user
+// (HB_COC_LOGIN_ID / HB_COC_PASSWORD, whitelisted to Dash's IP). The body is the
+// CoC param object minus credentials; card data passes through untouched and is
+// never logged. Campaign is fixed (HB_COC_CAMPAIGN_ID, default 15).
+const HB_ORDER_FIELDS = new Set([
+  'orderId', 'sessionId', 'ipAddress', 'salesUrl', 'firstName', 'lastName', 'companyName', 'emailAddress', 'phoneNumber',
+  'address1', 'address2', 'city', 'state', 'postalCode', 'country', 'billShipSame',
+  'shipFirstName', 'shipLastName', 'shipAddress1', 'shipAddress2', 'shipCity', 'shipState', 'shipPostalCode', 'shipCountry',
+  'paySource', 'cardNumber', 'cardMonth', 'cardYear', 'cardSecurityCode', 'couponCode', 'affId', 'sourceValue1', 'sourceValue2',
+  'productId', 'productQty', 'productPrice', 'productShipPrice', 'upsaleProductId', 'upsaleQty', 'upsalePrice', 'upsaleShipPrice',
+]);
+function hbOrderAuth(req, res) {
+  const secret = process.env.HB_ORDER_SECRET;
+  if (!secret || req.get('x-hb-order-secret') !== secret) { res.status(401).json({ ok: false, error: 'unauthorized' }); return null; }
+  const loginId = process.env.HB_COC_LOGIN_ID, password = process.env.HB_COC_PASSWORD;
+  if (!loginId || !password) { res.json({ ok: false, configured: false }); return null; }
+  return { loginId, password, campaignId: process.env.HB_COC_CAMPAIGN_ID || '15' };
+}
+function hbPickFields(body) {
+  const out = {};
+  for (const [k, v] of Object.entries(body || {})) {
+    if (HB_ORDER_FIELDS.has(k) || /^product\d+_(id|qty|price|shipPrice)$/.test(k)) out[k] = v;
+  }
+  return out;
+}
+router.post('/coc/order', async (req, res) => {
+  const cfg = hbOrderAuth(req, res); if (!cfg) return;
+  try {
+    const data = await importOrder(cfg.loginId, cfg.password, cfg.campaignId, hbPickFields(req.body));
+    const m = data && typeof data.message === 'object' ? data.message : {};
+    console.log('[coc/order]', data?.result, m.orderId || '', m.orderStatus || '', typeof data?.message === 'string' ? data.message.slice(0, 120) : '');
+    res.json(data);
+  } catch (err) {
+    console.error('[coc/order] failed:', err.response?.status || '', err.message);
+    res.status(502).json({ result: 'ERROR', message: 'coc_unreachable' });
+  }
+});
+router.post('/coc/upsale', async (req, res) => {
+  const cfg = hbOrderAuth(req, res); if (!cfg) return;
+  try {
+    const data = await importUpsale(cfg.loginId, cfg.password, hbPickFields(req.body));
+    const m = data && typeof data.message === 'object' ? data.message : {};
+    console.log('[coc/upsale]', data?.result, m.orderId || '', typeof data?.message === 'string' ? data.message.slice(0, 120) : '');
+    res.json(data);
+  } catch (err) {
+    console.error('[coc/upsale] failed:', err.response?.status || '', err.message);
+    res.status(502).json({ result: 'ERROR', message: 'coc_unreachable' });
   }
 });
 

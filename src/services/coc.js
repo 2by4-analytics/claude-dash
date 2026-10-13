@@ -288,4 +288,37 @@ async function importLead(loginId, password, campaignId, lead) {
   return r.data;
 }
 
-module.exports = { getCocHierarchy, getCocCampaignTotals, importClick, importLead };
+/**
+ * Import Order — charges a card and creates a CoC order. `order` holds the CoC
+ * Import Order params WITHOUT credentials (customer, address, card, productN_id…).
+ * Sent as a POST form body so the card number never sits in a URL. Returns CoC's
+ * JSON as-is; the caller decides what SUCCESS/ERROR means. Never log `order`.
+ */
+async function importOrder(loginId, password, campaignId, order) {
+  const body = new URLSearchParams({ loginId, password, campaignId: String(campaignId) });
+  for (const [k, v] of Object.entries(order || {})) {
+    if (v === undefined || v === null || v === '') continue;
+    body.append(k, String(v));
+  }
+  const r = await axios.post(`${COC_BASE}/order/import/`, body.toString(), {
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    timeout: 45000,
+  });
+  return r.data;
+}
+
+/** Import Upsale — adds a product to an existing order (charges the card on file). */
+async function importUpsale(loginId, password, upsale) {
+  const body = new URLSearchParams({ loginId, password });
+  for (const [k, v] of Object.entries(upsale || {})) {
+    if (v === undefined || v === null || v === '') continue;
+    body.append(k, String(v));
+  }
+  const r = await axios.post(`${COC_BASE}/upsale/import/`, body.toString(), {
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    timeout: 45000,
+  });
+  return r.data;
+}
+
+module.exports = { getCocHierarchy, getCocCampaignTotals, importClick, importLead, importOrder, importUpsale };
