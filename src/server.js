@@ -76,6 +76,14 @@ cron.schedule('0 5 * * *', () => {
   runCppSnapshot();
 }, { timezone: 'America/Chicago' });
 
+// Every 15 min: Happy Bakers CoC partials + buyers → GHL (marketing email). Only
+// runs when the HB GHL token is configured.
+const { runHbGhlSync } = require('./services/hb-ghl-sync');
+cron.schedule('*/15 * * * *', () => {
+  if (!process.env.HB_GHL_PIT) return;
+  runHbGhlSync({ days: 3 }).catch((e) => console.error('[hb-ghl] cron failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
 app.listen(PORT, () => {
   console.log(`Dashboard running on port ${PORT}`);
 });

@@ -101,6 +101,8 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `POST /api/today/upload/commit` | Body `{ client, filename, recapMarkdown, openItems[] }` — writes the recap to `<client>/meetings/<filename>.md` and appends approved items to CLAUDE.md |
 | `GET /api/today/debug` | Diagnostic snapshot — calendar accessibility, folders, parsed task sections |
 | `POST /api/coc/lead` | Body `{ firstName, lastName, emailAddress, phoneNumber, answers?, ipAddress? }` — Bagger's Corner opt-in → CoC partial lead (Import Click → Import Lead). Lander proxies here so CoC is only hit from Dash's whitelisted IP. Reuses `brianreports-api` creds from CLIENTS + campaign 2. Returns `{ ok, sessionId }` |
+| `POST /api/hb/ghl-sync?days=3&dry=1` | Happy Bakers: CoC campaign 15 partials + buyers → GHL "The Happy Baker" contacts with tags `hb partial` / `hb buyer` + product tags. `dry=1` previews. Cron runs it every 15 min. Env `HB_GHL_PIT`, `HB_GHL_LOCATION_ID` (+ the `HB_COC_*` creds) |
+| `GET /api/hb/ghl-sync/status` | Last HB→GHL run summary (counts, errors) |
 | `GET /api/debug/coc/:clientId?campaignId&startDate&endDate` | Raw CoC responses |
 | `GET /api/debug/orders/:clientId?campaignId&startDate&endDate` | Order status/type breakdown |
 | `GET /api/debug/revenue/:clientId?campaignId&startDate&endDate` | Per-order revenue breakdown |
@@ -231,6 +233,7 @@ FB and CoC join by UTMs:
 ## Cron jobs
 
 - **5am CT daily** (`server.js`): `runCppSnapshot()` pre-warms `cacheDaily` and `cacheWeek` so the launchpad opens fast.
+- **Every 15 min** (`server.js`): `runHbGhlSync({days:3})` — Happy Bakers CoC → GHL (skipped unless `HB_GHL_PIT` is set). Uses CoC `dateRangeType=dateUpdated` so partials that convert later flip to buyer; test emails skipped.
 
 ---
 
