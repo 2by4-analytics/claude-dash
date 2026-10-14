@@ -22,12 +22,13 @@ const TAG_PARTIAL = 'hb partial';
 const TAG_BUYER = 'hb buyer';
 const TAG_SOURCE = 'src: checkout champ';
 const PRODUCT_TAGS = [
-  [[251, 281], 'hb planner'],
+  [[251, 281, 291], 'hb planner'],
   [[245, 247, 249], 'hb stickers'],
   [[283, 285, 287], 'hb tester claim'],
   [[255], 'hb box subscriber'],
   [[257, 259, 261, 263, 265, 267, 269], 'hb tee'],
   [[279, 289], 'hb tumbler'],
+  [[275], 'hb scale'],
 ];
 
 const mdy = (d) => `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`;
