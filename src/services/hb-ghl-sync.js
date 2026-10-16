@@ -24,7 +24,7 @@ const TAG_SOURCE = 'src: checkout champ';
 const PRODUCT_TAGS = [
   [[251, 281, 291], 'hb planner'],
   [[245, 247, 249], 'hb stickers'],
-  [[283, 285, 287], 'hb tester claim'],
+  [[283, 285, 287, 295, 297], 'hb tester claim'],
   [[255], 'hb box subscriber'],
   [[257, 259, 261, 263, 265, 267, 269], 'hb tee'],
   [[279, 289], 'hb tumbler'],
