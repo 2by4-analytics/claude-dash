@@ -5,6 +5,7 @@
 //               no COMPLETE order. Gets "finish joining the testers" emails.
 //   hb buyer    has at least one COMPLETE order. Gets new-tester-offer emails.
 // When a partial buys, "hb partial" is removed so the reminder workflow stops.
+// Anyone with a refunded/cancelled order and no COMPLETE one is skipped entirely.
 // Product tags (hb planner, hb stickers, …) ride along for segmenting.
 //
 // CoC allowlists caller IPs, so this has to run on Dash. It reads with the
@@ -66,6 +67,7 @@ function people(orders) {
     const st = String(o.orderStatus || '').toUpperCase();
     if (st === 'COMPLETE') { p.buyer = true; productIds(o).forEach((id) => p.products.add(id)); }
     else if (st === 'PARTIAL' || st === 'DECLINED') p.started = true;
+    else if (/REFUND|CANCEL|VOID/.test(st)) p.refunded = true;
     const at = String(o.dateUpdated || o.dateCreated || '');
     if (at >= p.at) {
       p.at = at;
@@ -76,7 +78,9 @@ function people(orders) {
     }
     map.set(email, p);
   }
-  return [...map.values()].filter((p) => p.buyer || p.started);
+  // Someone who was refunded or cancelled is never a "partial": an old
+  // unfinished checkout must not put them back on the finish-joining emails.
+  return [...map.values()].filter((p) => p.buyer || (p.started && !p.refunded));
 }
 
 function ghl() {
