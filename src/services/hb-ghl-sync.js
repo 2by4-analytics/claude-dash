@@ -5,7 +5,9 @@
 //               no COMPLETE order. Gets "finish joining the testers" emails.
 //   hb buyer    has at least one COMPLETE order. Gets new-tester-offer emails.
 // When a partial buys, "hb partial" is removed so the reminder workflow stops.
-// Anyone with a refunded/cancelled order and no COMPLETE one is skipped entirely.
+//   canceled    has a refunded/cancelled order and no COMPLETE one. Buyer,
+//               partial and product tags are removed so no workflow emails them.
+// Buying again later flips them back to "hb buyer" and drops "canceled".
 // Product tags (hb planner, hb stickers, …) ride along for segmenting.
 //
 // CoC allowlists caller IPs, so this has to run on Dash. It reads with the
@@ -22,6 +24,7 @@ const TEST_EMAIL = /claude-test|@2by4llc\.com|alan2by4|@baggerscorner\.com/i;
 const TAG_PARTIAL = 'hb partial';
 const TAG_BUYER = 'hb buyer';
 const TAG_SOURCE = 'src: checkout champ';
+const TAG_CANCELED = 'canceled';
 const PRODUCT_TAGS = [
   [[251, 281, 291], 'hb planner'],
   [[245, 247, 249], 'hb stickers'],
@@ -78,9 +81,10 @@ function people(orders) {
     }
     map.set(email, p);
   }
-  // Someone who was refunded or cancelled is never a "partial": an old
-  // unfinished checkout must not put them back on the finish-joining emails.
-  return [...map.values()].filter((p) => p.buyer || (p.started && !p.refunded));
+  // Refunded/cancelled beats partial: an old unfinished checkout must not put
+  // them back on the finish-joining emails. A COMPLETE order beats both.
+  return [...map.values()].filter((p) => p.buyer || p.refunded || p.started)
+    .map((p) => ({ ...p, canceled: !p.buyer && !!p.refunded }));
 }
 
 function ghl() {
@@ -100,10 +104,15 @@ async function pushPerson({ http, locationId }, p) {
   const up = await http.post('/contacts/upsert', body);
   const id = up.data && up.data.contact && up.data.contact.id;
   if (!id) throw new Error('upsert returned no contact id');
+  if (p.canceled) {
+    await http.post(`/contacts/${id}/tags`, { tags: [TAG_SOURCE, TAG_CANCELED] });
+    await http.delete(`/contacts/${id}/tags`, { data: { tags: [TAG_BUYER, TAG_PARTIAL, ...PRODUCT_TAGS.map(([, t]) => t)] } });
+    return { id, tags: [TAG_SOURCE, TAG_CANCELED] };
+  }
   const tags = [TAG_SOURCE, p.buyer ? TAG_BUYER : TAG_PARTIAL];
   if (p.buyer) for (const [ids, tag] of PRODUCT_TAGS) if (ids.some((x) => p.products.has(x))) tags.push(tag);
   await http.post(`/contacts/${id}/tags`, { tags });
-  if (p.buyer) await http.delete(`/contacts/${id}/tags`, { data: { tags: [TAG_PARTIAL] } });
+  if (p.buyer) await http.delete(`/contacts/${id}/tags`, { data: { tags: [TAG_PARTIAL, TAG_CANCELED] } });
   return { id, tags };
 }
 
@@ -118,8 +127,8 @@ async function runHbGhlSync({ days = 3, dryRun = false } = {}) {
     try { orders = await cocOrders(days, 'dateUpdated'); }
     catch (e) { console.warn('[hb-ghl] dateUpdated query failed, using dateCreated:', e.message); orders = await cocOrders(days, 'dateCreated'); }
     const list = people(orders);
-    const summary = { orders: orders.length, people: list.length, buyers: list.filter((p) => p.buyer).length, partials: list.filter((p) => !p.buyer).length, pushed: 0, errors: [] };
-    if (dryRun) return { ...summary, preview: list.map((p) => ({ email: p.email.replace(/^(.).*@/, '$1***@'), buyer: p.buyer, products: [...p.products] })) };
+    const summary = { orders: orders.length, people: list.length, buyers: list.filter((p) => p.buyer).length, canceled: list.filter((p) => p.canceled).length, partials: list.filter((p) => !p.buyer && !p.canceled).length, pushed: 0, errors: [] };
+    if (dryRun) return { ...summary, preview: list.map((p) => ({ email: p.email.replace(/^(.).*@/, '$1***@'), buyer: p.buyer, canceled: p.canceled, products: [...p.products] })) };
     const g = ghl();
     for (const p of list) {
       try { await pushPerson(g, p); summary.pushed++; }
