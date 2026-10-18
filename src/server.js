@@ -84,6 +84,14 @@ cron.schedule('*/15 * * * *', () => {
   runHbGhlSync({ days: 3 }).catch((e) => console.error('[hb-ghl] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
+// Every 5 min: Happy Bakers support agent — new customer emails in GHL → refund /
+// cancel / reply as Maggie, or ask Alan by email. Needs ANTHROPIC_API_KEY.
+const { runHbSupport } = require('./services/hb-support');
+cron.schedule('*/5 * * * *', () => {
+  if (!process.env.HB_GHL_PIT || !process.env.ANTHROPIC_API_KEY) return;
+  runHbSupport().catch((e) => console.error('[hb-support] cron failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
 app.listen(PORT, () => {
   console.log(`Dashboard running on port ${PORT}`);
 });

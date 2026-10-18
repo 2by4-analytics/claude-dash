@@ -340,6 +340,23 @@ router.post('/hb/ghl-sync', async (req, res) => {
 });
 router.get('/hb/ghl-sync/status', (req, res) => res.json({ lastRun: hbGhlLastRun(), configured: !!process.env.HB_GHL_PIT }));
 
+// Happy Bakers support agent (see services/hb-support/index.js). Cron runs it every 5 min.
+const hbSupport = require('../services/hb-support');
+router.get('/hb/support/status', (req, res) => res.json(hbSupport.supportStatus()));
+router.post('/hb/support/run', async (req, res) => {
+  try { res.json(await hbSupport.runHbSupport()); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Dry run on one GHL conversation: decision + the email Alan would get. Nothing is sent or changed.
+router.post('/hb/support/try', async (req, res) => {
+  try { res.json(await hbSupport.tryConversation(String(req.query.conversationId || req.body.conversationId || ''))); }
+  catch (e) { res.status(502).json({ error: e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 300)}` : e.message }); }
+});
+router.post('/hb/support/mode', (req, res) => {
+  try { res.json({ mode: hbSupport.setMode(String(req.query.mode || req.body.mode || '')) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // GET /api/coc-relay/:resource?loginId=X&campaignId=..&startDate=M/D/YY&...
 // Read-only CoC passthrough for callers without a whitelisted IP (CoC's API
 // allowlists by IP; Vercel has no static egress). Used by the Happy Bakers
