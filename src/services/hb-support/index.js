@@ -197,7 +197,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
   const open = Object.values(cases).find((x) => x.conversationId === conv.id && x.status === 'awaiting_owner');
   if (open && !dryRun) {
     open.messages.push(...batch.map((b) => ({ id: b.id, at: b.at, text: b.text })));
-    open.inboundMessageId = last.id;
+    open.inboundMessageId = last.threadId;
     await emailOwner(open, `${open.name || open.email} wrote again`, `${customerBlock({ ...open, messages: batch })}\n\nStill waiting on your answer to ${tag(open.id)} — reply to the original email or this one.`);
     return { case: open.id, followUp: true };
   }
@@ -207,7 +207,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
     id: dryRun ? 0 : state.nextId++, status: 'new', createdAt: new Date().toISOString(),
     conversationId: conv.id, contactId: conv.contactId, email: last.from,
     name: snapshot.name || last.fromName || conv.fullName || '', subject: last.subject,
-    inboundMessageId: last.id, messages: batch.map((b) => ({ id: b.id, at: b.at, text: b.text })), snapshot,
+    inboundMessageId: last.threadId, messages: batch.map((b) => ({ id: b.id, at: b.at, text: b.text })), snapshot,
   };
   c.decision = await decide(c);
   c.plan = planFor(c.decision, snapshot);
@@ -290,18 +290,32 @@ async function handleOwner(msg) {
 let running = false;
 let lastRun = null;
 
+// GHL groups an email thread into ONE conversation message whose meta.email.messageIds
+// lists every email in it (ours and theirs) and whose dateAdded is the latest one. So each
+// email id is checked on its own and `seen` is keyed by email id: a customer's reply is
+// the 2nd id under our outbound reply, not the 1st (missed Carol's reply 10-18).
+// Returned `id` = the email id (dedup); `threadId` = the conversation message (reply target).
 async function inboundEmails(conv, since, seen) {
   const msgs = await ghl.getMessages(conv.id);
-  const fresh = msgs.filter((m) => m.direction === 'inbound' && new Date(m.dateAdded).getTime() >= since && !seen.has(m.id))
+  const fresh = msgs.filter((m) => new Date(m.dateAdded).getTime() >= since)
     .sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded));
   const out = [];
   for (const m of fresh) {
-    if (m.messageType !== 'TYPE_EMAIL') { out.push({ id: m.id, at: m.dateAdded, type: m.messageType, from: '', text: String(m.body || '').trim(), subject: '' }); continue; }
-    const emailId = (m.meta && m.meta.email && m.meta.email.messageIds && m.meta.email.messageIds[0]) || m.id;
-    const e = await ghl.emailMessage(emailId);
-    out.push({ id: m.id, at: m.dateAdded, type: m.messageType, from: addr(e.from), fromName: displayName(e.from), subject: e.subject, text: e.text.slice(0, 6000), attachments: e.attachments.length });
+    if (m.messageType !== 'TYPE_EMAIL') {
+      if (m.direction === 'inbound' && !seen.has(m.id)) out.push({ id: m.id, threadId: m.id, at: m.dateAdded, type: m.messageType, from: '', text: String(m.body || '').trim(), subject: '' });
+      continue;
+    }
+    const ids = (m.meta && m.meta.email && m.meta.email.messageIds) || [m.id];
+    for (const emailId of ids) {
+      if (seen.has(emailId)) continue;
+      const e = await ghl.emailMessage(emailId);
+      const at = e.at || m.dateAdded;
+      const from = addr(e.from);
+      if (e.direction === 'outbound' || OUR_ADDRESSES.test(from) || new Date(at).getTime() < since) { seen.add(emailId); continue; }
+      out.push({ id: emailId, threadId: m.id, at, type: 'TYPE_EMAIL', from, fromName: displayName(e.from), subject: e.subject, text: e.text.slice(0, 6000), attachments: e.attachments.length });
+    }
   }
-  return out;
+  return out.sort((a, b) => new Date(a.at) - new Date(b.at));
 }
 
 async function runHbSupport() {
