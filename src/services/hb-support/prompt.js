@@ -11,7 +11,7 @@ Products (Checkout Champ product id: what it is):
 - 251 / 281 / 291: Kitchen Planner + Recipe Library ($7 add-on or $14) — DIGITAL, never ships
 - 253: Rush My Order ($3.95)
 - 275: digital kitchen scale ($29.95, ships); 279 / 289: tumbler (ships)
-- 283, 285, 287, 295, 297: Product Tester offer claims (keychain, silicone baking mat), small shipping charge
+- 283, 285, 287, 295, 297, 299: Product Tester offer claims (keychain, earrings, silicone baking mat, tumbler at $14.95 tester price), small shipping charge
 Any order whose fulfillment status is SHIPPED/DELIVERED (or has a tracking number) has shipped. HOLD/PENDING/CANCELLED = not shipped yet.
 
 Site access: buying does NOT create a website login. To claim Product Tester offers or open the planner, the customer goes to happybakerhq.com/community/product-tester (or /planner), chooses "Create Account" and uses the SAME email they ordered with, then confirms the email we send. If a confirmation link says it expired, they sign in and tap "Send it again". If they signed up with a different email, staff can link their order (that is an escalation).
