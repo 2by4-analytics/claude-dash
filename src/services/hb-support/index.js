@@ -197,7 +197,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
   const open = Object.values(cases).find((x) => x.conversationId === conv.id && x.status === 'awaiting_owner');
   if (open && !dryRun) {
     open.messages.push(...batch.map((b) => ({ id: b.id, at: b.at, text: b.text })));
-    open.inboundMessageId = last.threadId;
+    open.inboundMessageId = last.id;
     await emailOwner(open, `${open.name || open.email} wrote again`, `${customerBlock({ ...open, messages: batch })}\n\nStill waiting on your answer to ${tag(open.id)} — reply to the original email or this one.`);
     return { case: open.id, followUp: true };
   }
@@ -207,7 +207,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
     id: dryRun ? 0 : state.nextId++, status: 'new', createdAt: new Date().toISOString(),
     conversationId: conv.id, contactId: conv.contactId, email: last.from,
     name: snapshot.name || last.fromName || conv.fullName || '', subject: last.subject,
-    inboundMessageId: last.threadId, messages: batch.map((b) => ({ id: b.id, at: b.at, text: b.text })), snapshot,
+    inboundMessageId: last.id, messages: batch.map((b) => ({ id: b.id, at: b.at, text: b.text })), snapshot,
   };
   c.decision = await decide(c);
   c.plan = planFor(c.decision, snapshot);
@@ -294,7 +294,8 @@ let lastRun = null;
 // lists every email in it (ours and theirs) and whose dateAdded is the latest one. So each
 // email id is checked on its own and `seen` is keyed by email id: a customer's reply is
 // the 2nd id under our outbound reply, not the 1st (missed Carol's reply 10-18).
-// Returned `id` = the email id (dedup); `threadId` = the conversation message (reply target).
+// Returned `id` = the email id (dedup + reply target: replyMessageId must be an EMAIL id,
+// a conversation message id 404s — Benitta 10-18); `threadId` = the conversation message.
 async function inboundEmails(conv, since, seen) {
   const msgs = await ghl.getMessages(conv.id);
   const fresh = msgs.filter((m) => new Date(m.dateAdded).getTime() >= since)
