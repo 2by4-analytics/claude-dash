@@ -26,7 +26,10 @@ const OUR_ADDRESSES = /@(mg\.)?happybakerhq\.com$/i;
 const AUTO_REFUND_MAX = () => Number(process.env.HB_SUPPORT_AUTO_REFUND_MAX || 75);
 const tag = (id) => `HB-CS-${id}`;
 const money = (n) => `$${Number(n || 0).toFixed(2)}`;
-const addr = (from) => (String(from).match(/<([^>]+)>/) || [null, from])[1].trim().toLowerCase();
+// Forwarding can SRS-rewrite the sender (SRS0=hash=tt=2by4llc.com=alan@happybakerhq.com),
+// which looked like our own address, so Alan's HB-CS-6 answer was skipped (10-18).
+const unSrs = (a) => { const m = /^srs[01]=[^=]+=[^=]+=([^=]+)=([^@]+)@/i.exec(a); return m ? `${m[2]}@${m[1]}` : a; };
+const addr = (from) => unSrs((String(from).match(/<([^>]+)>/) || [null, from])[1].trim().toLowerCase());
 const displayName = (from) => String(from).replace(/<[^>]*>/, '').replace(/"/g, '').trim();
 
 let state = null, cases = null, lessons = null;
