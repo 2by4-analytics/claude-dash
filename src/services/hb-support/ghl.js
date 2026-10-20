@@ -72,10 +72,10 @@ async function sendEmail({ contactId, conversationId, to, fromName, subject, tex
   return r.data.messageId || r.data.emailMessageId;
 }
 
-async function contactIdFor(email) {
+async function contactIdFor(email, firstName = 'Alan', lastName = '') {
   const r = await http().get('/contacts/search/duplicate', { params: { locationId: loc(), email } });
   if (r.data.contact && r.data.contact.id) return r.data.contact.id;
-  const up = await http().post('/contacts/upsert', { locationId: loc(), email, firstName: 'Alan', source: 'HB support agent' });
+  const up = await http().post('/contacts/upsert', { locationId: loc(), email, firstName, ...(lastName ? { lastName } : {}), source: 'HB support agent' });
   return up.data.contact.id;
 }
 

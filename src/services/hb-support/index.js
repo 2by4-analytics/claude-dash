@@ -20,6 +20,7 @@ const ghl = require('./ghl');
 const coc = require('./coc');
 const { callTool } = require('./llm');
 const prompt = require('./prompt');
+const address = require('./address');
 
 const OWNER = () => (process.env.HB_SUPPORT_ALAN_EMAIL || 'alan@2by4llc.com').toLowerCase();
 const OUR_ADDRESSES = /@(mg\.)?happybakerhq\.com$/i;
@@ -163,6 +164,17 @@ async function emailOwner(c, subjectTail, text) {
   if (!state.ownerContactId) { state.ownerContactId = await ghl.contactIdFor(OWNER()); }
   await ghl.sendEmail({ contactId: state.ownerContactId, to: OWNER(), fromName: 'HB Support Agent', subject: `[${tag(c.id)}] ${subjectTail}`, text });
 }
+
+async function sendOwner(subject, text) {
+  if (!state.ownerContactId) { state.ownerContactId = await ghl.contactIdFor(OWNER()); }
+  await ghl.sendEmail({ contactId: state.ownerContactId, to: OWNER(), fromName: 'HB Support Agent', subject, text });
+}
+
+// Helpers the bad-address flow (address.js) uses to email Alan and answer the customer.
+const addressHelpers = (conv) => ({
+  sendOwner,
+  replyAsMaggie: (r, text, replyMessageId) => ghl.sendEmail({ contactId: r.contactId || conv.contactId, conversationId: conv && conv.id, to: r.email, fromName: 'Maggie Bennett', subject: 'Re: Quick question about your Happy Bakers order', text, replyMessageId }),
+});
 
 const customerBlock = (c) => `${c.name || c.email} <${c.email}> wrote ("${c.subject}"):\n\n${c.messages.map((m) => m.text).join('\n\n— next message —\n\n')}`;
 
@@ -347,10 +359,13 @@ async function runHbSupport() {
         if (!msgs.length) continue;
         const ownerMsgs = msgs.filter((x) => x.from === OWNER());
         const custMsgs = msgs.filter((x) => x.from !== OWNER() && !OUR_ADDRESSES.test(x.from));
-        for (const om of ownerMsgs) { await handleOwner(om); summary.owner++; }
+        for (const om of ownerMsgs) { if (!(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); summary.owner++; }
         const email = custMsgs.filter((x) => x.type === 'TYPE_EMAIL' && x.from);
         const other = custMsgs.filter((x) => x.type !== 'TYPE_EMAIL');
-        if (email.length) { await handleCustomer(conv, email, { dryRun: false }); summary.customer++; }
+        if (email.length) {
+          if (!(await address.handleReply(email, addressHelpers(conv)))) await handleCustomer(conv, email, { dryRun: false });
+          summary.customer++;
+        }
         if (other.length) {
           const c = { id: state.nextId++, status: 'awaiting_owner', createdAt: new Date().toISOString(), conversationId: conv.id, contactId: conv.contactId, email: conv.email || '', name: conv.fullName || '', subject: '(non-email message)', messages: other.map((o) => ({ id: o.id, at: o.at, text: o.text })), decision: { summary: `${other[0].type.replace('TYPE_', '')} message` }, plan: { action: 'escalate', proposedActions: [], problems: [] } };
           cases[c.id] = c;
@@ -378,6 +393,11 @@ async function runHbSupport() {
     state.watermark = startedAt;
     state.seen = [...seen].slice(-3000);
     saveAll();
+    if (process.env.SHIPSTATION_API_KEY) {
+      try { summary.address = await address.runAddressScan({ sendOwner }); }
+      catch (e) { summary.errors.push(`address scan: ${e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 200)}` : e.message}`); }
+      saveAll();
+    }
     summary.ms = Date.now() - startedAt;
     if (summary.customer || summary.owner || summary.errors.length) console.log('[hb-support] run', JSON.stringify({ ...summary, errors: summary.errors.length }));
     return (lastRun = summary);
@@ -412,4 +432,4 @@ function setMode(next) {
   return mode();
 }
 
-module.exports = { runHbSupport, tryConversation, supportStatus, setMode, _planFor: planFor, _describeAccount: describeAccount };
+module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, setMode, _planFor: planFor, _describeAccount: describeAccount };

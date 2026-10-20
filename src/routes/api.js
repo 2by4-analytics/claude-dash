@@ -343,6 +343,11 @@ router.get('/hb/ghl-sync/status', (req, res) => res.json({ lastRun: hbGhlLastRun
 // Happy Bakers support agent (see services/hb-support/index.js). Cron runs it every 5 min.
 const hbSupport = require('../services/hb-support');
 router.get('/hb/support/status', (req, res) => res.json(hbSupport.supportStatus()));
+router.get('/hb/support/address', (req, res) => res.json(hbSupport.addressStatus()));
+router.get('/hb/support/address/preview', async (req, res) => {
+  try { res.json(await hbSupport.addressPreview()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 router.post('/hb/support/run', async (req, res) => {
   try { res.json(await hbSupport.runHbSupport()); }
   catch (e) { res.status(502).json({ error: e.message }); }
