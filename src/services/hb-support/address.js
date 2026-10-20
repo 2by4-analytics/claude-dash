@@ -95,6 +95,13 @@ async function runAddressScan({ sendOwner }) {
   for (const [id, o] of flagged) if (!st.orders[id]) st.orders[id] = record(o);
   // Eric fixed it (or it shipped) before we got to it.
   for (const [id, r] of Object.entries(st.orders)) if ((r.status === 'found' || r.status === 'proposed') && !flagged.has(id)) { r.status = 'fixed'; r.fixedNote = 'no longer flagged before we acted'; }
+  // Alan already approved these; a ShipStation error gets two more tries on later runs.
+  const retry = Object.values(st.orders).filter((r) => r.status === 'failed' && (r.tries || 1) < 3 && !r.cancelledAt);
+  if (retry.length) {
+    retry.forEach((r) => { r.tries = (r.tries || 1) + 1; });
+    const lines = await actOn(retry);
+    await sendOwner(`[${tag('RETRY')}] ${retry.length} bad-address order${retry.length > 1 ? 's' : ''} retried`, lines.join('\n'));
+  }
   const cutoff = Date.now() - GRACE_HOURS() * 3600 * 1000;
   const due = Object.values(st.orders).filter((r) => r.status === 'found' && ssTime(r.createDate || r.orderDate) <= cutoff);
   const out = { flagged: flagged.size, due: due.length };

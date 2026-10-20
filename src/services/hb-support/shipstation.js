@@ -33,7 +33,13 @@ async function cancelOrder(orderId, note) {
   const o = await getOrder(orderId);
   if (!isHb(o)) throw new Error(`order ${o.orderNumber} is not in a Happy Bakers store`);
   const internalNotes = [o.internalNotes, note].filter(Boolean).join('\n');
-  const r = await http().post('/orders/createorder', { ...o, orderStatus: 'cancelled', internalNotes });
+  // Some imported orders carry billToParty without billToMyOtherAccount, and ShipStation
+  // rejects them on the way back in (400 "'billToMyOtherAccount' is required", 10-20).
+  const advancedOptions = { ...o.advancedOptions };
+  if (advancedOptions.billToParty && !advancedOptions.billToMyOtherAccount) {
+    for (const k of ['billToParty', 'billToAccount', 'billToPostalCode', 'billToCountryCode', 'billToMyOtherAccount']) delete advancedOptions[k];
+  }
+  const r = await http().post('/orders/createorder', { ...o, advancedOptions, orderStatus: 'cancelled', internalNotes });
   if (r.data.orderStatus !== 'cancelled') throw new Error(`ShipStation left ${o.orderNumber} as ${r.data.orderStatus}`);
   return r.data;
 }
