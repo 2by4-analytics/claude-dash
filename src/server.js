@@ -92,6 +92,14 @@ cron.schedule('*/5 * * * *', () => {
   runHbSupport().catch((e) => console.error('[hb-support] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Dashboard running on port ${PORT}`);
+});
+
+// Railway sends SIGTERM to the old container on every redeploy. Exit 0 so a normal
+// replacement isn't reported as a crash (it was, via npm's "signal SIGTERM", 10-20).
+process.on('SIGTERM', () => {
+  console.log('SIGTERM: shutting down');
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8000).unref();
 });
