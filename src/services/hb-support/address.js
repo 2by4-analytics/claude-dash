@@ -2,7 +2,9 @@
 // "validation warning/failed"; Eric fixes the obvious typos himself, so an order still
 // flagged after HB_ADDRESS_GRACE_HOURS is cancelled in ShipStation and the customer gets
 // an email from Maggie asking for their full address. Their reply is parsed and the new
-// address is emailed to Alan, who has Eric make a fresh label.
+// address is emailed to Alan, who has Eric make a fresh label. No reply after
+// HB_ADDRESS_REMIND_HOURS (24) → Maggie sends one reminder; after HB_ADDRESS_STALE_DAYS (5)
+// → Alan gets a list of who never answered.
 //
 // Modes (address.mode, Alan emails "address: auto|approve|off"):
 //   approve  Alan gets a numbered batch [HB-ADDR-n] and replies yes / skip 2 5 / only 1 3 / no
@@ -18,6 +20,8 @@ const ss = require('./shipstation');
 const { callTool } = require('./llm');
 
 const GRACE_HOURS = () => Number(process.env.HB_ADDRESS_GRACE_HOURS || 24);
+const REMIND_HOURS = () => Number(process.env.HB_ADDRESS_REMIND_HOURS || 24);
+const STALE_DAYS = () => Number(process.env.HB_ADDRESS_STALE_DAYS || 5);
 const PROPOSAL_GAP_MS = 3 * 3600 * 1000;
 const tag = (id) => `HB-ADDR-${id}`;
 const SIGNATURE = 'Happy baking!\nMaggie Bennett\nThe Happy Bakers';
@@ -71,6 +75,45 @@ async function cancelAndAsk(r) {
   return r;
 }
 
+function reminderText(r) {
+  return [
+    `Hi ${firstName(r.shipTo.name)},`,
+    "Just checking in! Your Happy Bakers order is packed and waiting, but we still need a good shipping address before it can go out.",
+    `Here's what we have:\n${addressLines(r.shipTo)}`,
+    "Could you reply with your full address, including any apartment or unit number? Or reply \"looks good\" if it's already right.",
+    SIGNATURE,
+  ].join('\n\n');
+}
+
+// Maggie nudges once at REMIND_HOURS; Alan gets one list of everyone still silent at
+// STALE_DAYS. Both stay awaiting_customer, so a late reply is still parsed.
+async function followUps(sendOwner) {
+  const waiting = Object.values(st.orders).filter((r) => r.status === 'awaiting_customer' && r.askSentAt);
+  const age = (r) => Date.now() - new Date(r.askSentAt).getTime();
+  const lines = [];
+  for (const r of waiting.filter((x) => !x.reminderSentAt && age(x) >= REMIND_HOURS() * 3600 * 1000)) {
+    try {
+      r.reminderMessageId = await ghl.sendEmail({ contactId: r.contactId, to: r.email, fromName: 'Maggie Bennett', subject: 'Re: Quick question about your Happy Bakers order', text: reminderText(r) });
+      r.reminderSentAt = new Date().toISOString();
+      lines.push(`Reminded ${r.orderNumber} ${r.shipTo.name}`);
+    } catch (e) { lines.push(`Reminder FAILED ${r.orderNumber} ${r.shipTo.name}: ${e.message}`); }
+    save();
+  }
+  const stale = waiting.filter((x) => !x.staleNotifiedAt && age(x) >= STALE_DAYS() * 86400 * 1000);
+  if (stale.length) {
+    const list = stale.map((r, i) => `${i + 1}. ${r.shipTo.name} <${r.email}>, order ${r.orderNumber}\n   ${oneLine(r.shipTo)}\n   Asked ${r.askSentAt.slice(0, 10)}${r.reminderSentAt ? `, reminded ${r.reminderSentAt.slice(0, 10)}` : ''}`);
+    await sendOwner(`[${tag('STALE')}] ${stale.length} customer${stale.length > 1 ? 's' : ''} never sent an address`, [
+      `No reply ${STALE_DAYS()} days after Maggie asked for a shipping address. Each order is still cancelled in ShipStation:`,
+      list.join('\n\n'),
+      "Decide in ShipStation/CoC: ship to the address as is, refund, or leave it. If any of them reply later, I'll still email you the address.",
+    ].join('\n\n'));
+    const now = new Date().toISOString();
+    stale.forEach((r) => { r.staleNotifiedAt = now; });
+    save();
+  }
+  return lines;
+}
+
 async function actOn(recs) {
   const lines = [];
   for (const r of recs) {
@@ -105,6 +148,8 @@ async function runAddressScan({ sendOwner }) {
   const cutoff = Date.now() - GRACE_HOURS() * 3600 * 1000;
   const due = Object.values(st.orders).filter((r) => r.status === 'found' && ssTime(r.createDate || r.orderDate) <= cutoff);
   const out = { flagged: flagged.size, due: due.length };
+  const reminded = await followUps(sendOwner);
+  if (reminded.length) out.reminded = reminded;
 
   if (due.length && st.mode === 'auto') {
     const lines = await actOn(due);
@@ -231,7 +276,7 @@ async function handleReply(batch, { sendOwner, replyAsMaggie }) {
 
 function addressStatus() {
   load();
-  return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
+  return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
 }
 
 // Read-only preview of what the scan would find right now.
