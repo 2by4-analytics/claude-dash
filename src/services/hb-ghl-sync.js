@@ -10,6 +10,13 @@
 // Buying again later flips them back to "hb buyer" and drops "canceled".
 // Product tags (hb planner, hb stickers, …) ride along for segmenting.
 //
+// Buyers also get one opportunity in the "Happy Baker Stickers" pipeline, in the
+// FURTHEST stage they've bought (Sticker → Sticker Club → Baker Box → Tee). It
+// only ever moves forward: each run sees a 3-day window, so someone who bought
+// the Box last week and stickers today must not drop back to "Bought Sticker".
+// Canceled contacts' opportunities are marked lost; buying again reopens them.
+// Stages are looked up by name, so a missing stage just skips that move.
+//
 // CoC allowlists caller IPs, so this has to run on Dash. It reads with the
 // happybaker-site-api user (HB_COC_LOGIN_ID / HB_COC_PASSWORD) and writes with a
 // location PIT (HB_GHL_PIT / HB_GHL_LOCATION_ID). Upserts and tag adds are
@@ -28,11 +35,21 @@ const TAG_CANCELED = 'canceled';
 const PRODUCT_TAGS = [
   [[251, 281, 291], 'hb planner'],
   [[245, 247, 249], 'hb stickers'],
+  [[247], 'hb monthly stickers'],
   [[283, 285, 287, 295, 297, 299], 'hb tester claim'],
   [[255], 'hb box subscriber'],
   [[257, 259, 261, 263, 265, 267, 269], 'hb tee'],
   [[279, 289], 'hb tumbler'],
   [[275], 'hb scale'],
+];
+
+// Pipeline stages in funnel order; a buyer sits in the last one they qualify for.
+const PIPELINE = 'Happy Baker Stickers';
+const STAGES = [
+  ['Bought Sticker', [245, 247, 249]],
+  ['Bought Sticker Club', [247]],
+  ['Bought Baker Box', [255]],
+  ['Bought Tee', [257, 259, 261, 263, 265, 267, 269]],
 ];
 
 const mdy = (d) => `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`;
@@ -94,6 +111,45 @@ function ghl() {
   return { http, locationId };
 }
 
+// Stage name → { id, rank } for the pipeline, read once per run. null if the
+// pipeline is missing (opportunities are then skipped; tags still sync).
+async function loadPipeline({ http, locationId }) {
+  const r = await http.get('/opportunities/pipelines', { params: { locationId } });
+  const p = (r.data.pipelines || []).find((x) => x.name === PIPELINE);
+  if (!p) return null;
+  const byName = new Map(p.stages.map((s) => [s.name, s.id]));
+  const stages = STAGES.map(([name], rank) => ({ name, rank, id: byName.get(name) || null }));
+  return { id: p.id, stages, rankOf: new Map(stages.filter((s) => s.id).map((s) => [s.id, s.rank])) };
+}
+
+function furthestStage(pipe, products) {
+  let best = null;
+  STAGES.forEach(([, ids], rank) => { if (ids.some((x) => products.has(x)) && pipe.stages[rank].id) best = pipe.stages[rank]; });
+  return best;
+}
+
+async function syncOpportunity({ http, locationId }, pipe, contactId, p) {
+  const found = await http.get('/opportunities/search', { params: { location_id: locationId, pipeline_id: pipe.id, contact_id: contactId, limit: 1 } });
+  const opp = (found.data.opportunities || [])[0];
+  if (p.canceled) {
+    if (opp && opp.status !== 'lost') { await http.put(`/opportunities/${opp.id}`, { status: 'lost' }); return 'lost'; }
+    return null;
+  }
+  const target = furthestStage(pipe, p.products);
+  if (!target) return null;
+  if (!opp) {
+    const name = [p.firstName, p.lastName].filter(Boolean).join(' ') || p.email;
+    await http.post('/opportunities/', { locationId, pipelineId: pipe.id, pipelineStageId: target.id, contactId, name, status: 'open' });
+    return 'created';
+  }
+  const cur = pipe.rankOf.has(opp.pipelineStageId) ? pipe.rankOf.get(opp.pipelineStageId) : -1;
+  if (target.rank > cur || opp.status !== 'open') {
+    await http.put(`/opportunities/${opp.id}`, { pipelineStageId: target.rank > cur ? target.id : opp.pipelineStageId, status: 'open' });
+    return 'moved';
+  }
+  return null;
+}
+
 async function pushPerson({ http, locationId }, p) {
   const body = { locationId, email: p.email, source: 'Checkout Champ' };
   if (p.firstName) body.firstName = p.firstName;
@@ -128,10 +184,23 @@ async function runHbGhlSync({ days = 3, dryRun = false } = {}) {
     catch (e) { console.warn('[hb-ghl] dateUpdated query failed, using dateCreated:', e.message); orders = await cocOrders(days, 'dateCreated'); }
     const list = people(orders);
     const summary = { orders: orders.length, people: list.length, buyers: list.filter((p) => p.buyer).length, canceled: list.filter((p) => p.canceled).length, partials: list.filter((p) => !p.buyer && !p.canceled).length, pushed: 0, errors: [] };
-    if (dryRun) return { ...summary, preview: list.map((p) => ({ email: p.email.replace(/^(.).*@/, '$1***@'), buyer: p.buyer, canceled: p.canceled, products: [...p.products] })) };
+    const stageName = (p) => { let s = null; for (const [name, ids] of STAGES) if (p.buyer && ids.some((x) => p.products.has(x))) s = name; return s; };
+    if (dryRun) {
+      const stages = {};
+      for (const p of list) { const s = p.canceled ? 'lost (canceled)' : stageName(p); if (s) stages[s] = (stages[s] || 0) + 1; }
+      return { ...summary, stages, preview: list.map((p) => ({ email: p.email.replace(/^(.).*@/, '$1***@'), buyer: p.buyer, canceled: p.canceled, products: [...p.products], stage: stageName(p) })) };
+    }
     const g = ghl();
+    let pipe = null;
+    try { pipe = await loadPipeline(g); if (!pipe) summary.errors.push(`pipeline "${PIPELINE}" not found, opportunities skipped`); }
+    catch (e) { summary.errors.push(`pipeline lookup: ${e.message}`); }
+    if (pipe) { const missing = pipe.stages.filter((s) => !s.id).map((s) => s.name); if (missing.length) summary.errors.push(`stages missing in "${PIPELINE}": ${missing.join(', ')}`); }
+    summary.opportunities = { created: 0, moved: 0, lost: 0 };
     for (const p of list) {
-      try { await pushPerson(g, p); summary.pushed++; }
+      try {
+        const { id } = await pushPerson(g, p); summary.pushed++;
+        if (pipe && (p.buyer || p.canceled)) { const r = await syncOpportunity(g, pipe, id, p); if (r) summary.opportunities[r]++; }
+      }
       catch (e) { summary.errors.push(`${p.email.replace(/^(.).*@/, '$1***@')}: ${e.response ? e.response.status + ' ' + JSON.stringify(e.response.data).slice(0, 160) : e.message}`); }
       await new Promise((r) => setTimeout(r, 150));
     }
