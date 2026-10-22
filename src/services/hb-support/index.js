@@ -40,6 +40,8 @@ function loadAll() {
   cases = store.load('cases', {});
   lessons = store.load('lessons', []);
 }
+// Ids stay unique after a rule is deleted.
+const nextLessonId = () => lessons.reduce((max, l) => Math.max(max, l.id || 0), 0) + 1;
 function saveAll() { store.save('state', state); store.save('cases', cases); store.save('lessons', lessons); }
 const mode = () => (state && state.mode) || process.env.HB_SUPPORT_MODE || 'approve';
 
@@ -260,8 +262,17 @@ async function handleOwner(msg) {
   if (!m) {
     const modeCmd = /^\s*agent:\s*(auto|approve|off)\b/i.exec(text);
     if (modeCmd) { state.mode = modeCmd[1].toLowerCase(); return { mode: state.mode }; }
+    // "rule 9: <new text>" replaces lesson 9, "rule 9: delete" removes it.
+    const edit = /^\s*(?:rule|lesson)\s+#?(\d+)\s*:\s*([\s\S]+)/i.exec(text);
+    if (edit) {
+      const i = lessons.findIndex((l) => l.id === Number(edit[1]));
+      if (i < 0) return { ignored: `unknown rule ${edit[1]}` };
+      if (/^delete\b/i.test(edit[2].trim())) { lessons.splice(i, 1); return { lessonDeleted: Number(edit[1]) }; }
+      lessons[i] = { ...lessons[i], text: edit[2].trim(), editedAt: new Date().toISOString() };
+      return { lessonEdited: Number(edit[1]) };
+    }
     const rule = /^\s*(rule|lesson)\s*:\s*([\s\S]+)/i.exec(text);
-    if (rule) { lessons.push({ id: lessons.length + 1, at: new Date().toISOString(), text: rule[2].trim(), caseId: null }); return { lesson: true }; }
+    if (rule) { lessons.push({ id: nextLessonId(), at: new Date().toISOString(), text: rule[2].trim(), caseId: null }); return { lesson: true }; }
     return { ignored: 'no case tag' };
   }
   const c = cases[m[1]];
@@ -290,7 +301,7 @@ async function handleOwner(msg) {
   const results = await execute(c, ok);
   const failed = results.filter((r) => !r.ok);
   if (out.send_reply && out.reply && !failed.length) await replyToCustomer(c, out.reply);
-  if (out.lesson) lessons.push({ id: lessons.length + 1, at: new Date().toISOString(), text: out.lesson, caseId: c.id });
+  if (out.lesson) lessons.push({ id: nextLessonId(), at: new Date().toISOString(), text: out.lesson, caseId: c.id });
   c.status = failed.length ? 'awaiting_owner' : 'done';
 
   const lines = [out.confirmation];
