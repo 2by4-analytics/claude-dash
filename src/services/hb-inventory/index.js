@@ -166,9 +166,74 @@ function report({ L, cfg, f }) {
   return { subject: headline.join(' · ') || 'Inventory update', text: lines.join('\n') };
 }
 
-async function sendOwner(subject, text) {
+// Same content as report(), as an email page in the HB dashboard palette. Single-level
+// tables with inline styles only: nested template HTML broke in Gmail before.
+const C = { bg: '#fbf6ec', card: '#fffdf8', ink: '#3b2a20', mute: '#8a7566', line: '#eadfcb', terra: '#c4643f', honey: '#c99a4e', good: '#4f7d4a', bad: '#b4432f', soft: '#f4ead8' };
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function reportHtml({ L, cfg, f }, intro) {
+  const box = (inner, border = C.line) => `<div style="background:${C.card};border:1px solid ${border};border-radius:10px;padding:18px 20px;margin:0 0 16px">${inner}</div>`;
+  const h = (t) => `<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${C.mute};font-weight:700;margin:0 0 10px">${t}</div>`;
+  const row = (k, v, strong) => `<tr><td style="padding:6px 0;color:${C.mute};border-bottom:1px solid ${C.line}">${k}</td><td align="right" style="padding:6px 0;border-bottom:1px solid ${C.line};${strong ? `font-weight:700;color:${strong}` : ''}">${v}</td></tr>`;
+  const table = (rows) => `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">${rows.join('')}</table>`;
+  const callout = (color, bg, title, body) => `<div style="background:${bg};border-left:4px solid ${color};border-radius:6px;padding:12px 14px;margin:14px 0 0"><div style="font-weight:700;color:${color};font-size:16px">${title}</div>${body ? `<div style="color:${C.ink};font-size:13px;margin-top:4px;line-height:1.5">${body}</div>` : ''}</div>`;
+
+  const parts = [];
+  if (intro) parts.push(box(intro));
+  for (const it of f.items) {
+    const name = esc(L.items[it.sku]?.name || it.sku);
+    const last = monthName(it.months[it.months.length - 1]);
+    let action;
+    if (it.action === 'order_now') {
+      action = callout(C.terra, '#fbeee7', `Order ${fmt(it.orderNow)} now${it.unitCost ? ` · about ${money(it.orderNow * it.unitCost)}` : ''}`,
+        `Lands ~${md(it.arrives)} and covers rebills through ${md(it.coverEnd)} (+${cfg.bufferPct}% buffer).${it.lateRisk ? ` <b style="color:${C.bad}">Stock runs out ${md(it.stockout)}, before it lands: some boxes will ship late.</b>` : ''}<br>All of ${last} needs ~${fmt(it.toFinish)} more; I'll ask for top-ups as real rebills come in.`);
+    } else if (it.action === 'watch') {
+      action = callout(C.honey, C.soft, `Nothing to order today`, `Next order by ${md(it.orderBy)}. All of ${last} needs ~${fmt(it.toFinish)} more.`);
+    } else {
+      const heavy = it.leftover > it.totalDemand * 0.1 && it.leftover > 10;
+      action = callout(heavy ? C.honey : C.good, heavy ? C.soft : '#eef3ec', `Covered through ${md(it.lastDay)}`, `Expected leftover ~${fmt(it.leftover)}.${heavy ? ' More than I\'d like: hold off on any more.' : ''}`);
+    }
+    parts.push(box(
+      `<div style="font-size:12px;color:${C.mute};text-transform:uppercase;letter-spacing:.08em;font-weight:700">${esc(it.months.map(monthName).join(' + '))} box</div>`
+      + `<div style="font-size:20px;font-weight:700;margin:2px 0 12px">${name} <span style="font-size:13px;color:${C.mute};font-weight:400">${it.sku}</span></div>`
+      + table([
+        row('Bought (incl. in transit)', fmt(it.bought)),
+        row('Boxes billed so far', `−${fmt(it.usedBoxes)}`),
+        row('One-off sales', `−${fmt(it.usedOneOff)}`),
+        row('Left', fmt(it.remaining), C.ink),
+        row(`Still to ship through ${md(it.lastDay)}`, `~${fmt(it.totalDemand)}`),
+        row('Runs out', it.stockout ? md(it.stockout) : 'Not this month', it.stockout ? C.bad : C.good),
+        ...(it.unitCost ? [row('Average cost', money(it.unitCost))] : []),
+      ])
+      + action,
+      it.action === 'order_now' ? C.terra : C.line,
+    ));
+  }
+  for (const g of f.gaps) {
+    parts.push(callout(C.bad, '#f8e9e6', `${monthName(g.month)}: no item chosen yet`,
+      `~${fmt(g.boxes)} boxes. The first one ships ${md(g.firstBill)} (${g.daysAway} days away). With a ${cfg.leadDays}-day lead time, <b>pick it by ${md(addDays(g.firstBill, -cfg.leadDays - 3))}</b>.`).replace('margin:14px 0 0', 'margin:0 0 16px'));
+  }
+  parts.push(box(h('Boxes by month · still to bill') + table(Object.entries(f.months).sort().map(([m, n]) => {
+    const sku = L.calendar.find((c) => c.month === m)?.sku;
+    return row(`${monthName(m)} · ${sku ? esc(sku) : `<span style="color:${C.bad}">item TBD</span>`}`, `~${fmt(n)}${f.boxesBilledByMonth[m] ? ` <span style="color:${C.mute}">(+${fmt(f.boxesBilledByMonth[m])} billed)</span>` : ''}`);
+  }))));
+  parts.push(box(h('Assumptions') + table([
+    row('First $25 rebill success', f.measured ? `${Math.round(f.rate * 100)}% <span style="color:${C.mute}">(${f.billed} of ${f.resolved})</span>` : `<span style="color:${C.bad}">${Math.round(f.rate * 100)}% assumed</span>`),
+    row('New Box signups', `${f.signupsPerDay.toFixed(1)}/day <span style="color:${C.mute}">(${f.signupsPinned ? 'set' : 'last 7 days'})</span>`),
+    row('Live Box subscriptions', fmt(f.liveCount)),
+    row('Lead time · cover after arrival · buffer', `${cfg.leadDays}d · ${cfg.reviewDays}d · ${cfg.bufferPct}%`),
+  ]) + (f.measured ? '' : `<div style="font-size:12px;color:${C.mute};margin-top:10px;line-height:1.5">The success rate is assumed until ${cfg.minResolved} first rebills are due (${f.resolved} so far). Real declines will shrink every number above.</div>`)));
+  parts.push(`<div style="font-size:13px;color:${C.mute};line-height:1.7;padding:0 4px"><b style="color:${C.ink}">Reply to this email to</b><br>• log an order: “ordered 200 scales, $918 total, PO-211-…, ETA 11/1”<br>• set a month: “December = silicone baking mat, SKU MAT”<br>• change an assumption: “lead time 12 days”, “assume 30 signups a day”</div>`);
+
+  return `<html><body style="margin:0;padding:0;background:${C.bg}"><div style="background:${C.bg};padding:20px 12px;font-family:Arial,Helvetica,sans-serif;color:${C.ink}"><div style="max-width:600px;margin:0 auto">`
+    + `<div style="font-size:13px;color:${C.mute};margin:0 0 4px">The Happy Bakers · Inventory · ${md(f.today)}</div>`
+    + `<div style="font-size:22px;font-weight:700;margin:0 0 16px">${esc(report({ L, cfg, f }).subject)}</div>`
+    + parts.join('') + '</div></div></body></html>';
+}
+
+async function sendOwner(subject, text, html) {
   if (!state.ownerContactId) state.ownerContactId = await ghl.contactIdFor(OWNER());
-  await ghl.sendEmail({ contactId: state.ownerContactId, to: OWNER(), fromName: 'HB Inventory Agent', subject, text });
+  await ghl.sendEmail({ contactId: state.ownerContactId, to: OWNER(), fromName: 'HB Inventory Agent', subject, text, html });
 }
 
 // ─── daily run ───────────────────────────────────────────────────────────────
@@ -192,10 +257,10 @@ async function runInventory({ send = true, force = false } = {}) {
     if (send && !force && state.lastSentDate === today) return { skipped: `already sent ${tag(state.reports[state.reports.length - 1]?.id)} today` };
     const g = await gather();
     const r = report(g);
-    const out = { at: new Date().toISOString(), subject: r.subject, text: r.text, items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured };
+    const out = { at: new Date().toISOString(), subject: r.subject, text: r.text, html: reportHtml(g), items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured };
     if (send) {
       const id = state.nextId++;
-      await sendOwner(`[${tag(id)}] ${r.subject}`, r.text);
+      await sendOwner(`[${tag(id)}] ${r.subject}`, r.text, reportHtml(g));
       state.lastSentDate = today;
       state.reports.push({ id, at: out.at, subject: r.subject, items: g.f.items.map(({ sku, remaining, stockout, orderNow, totalDemand }) => ({ sku, remaining, stockout, orderNow, totalDemand })) });
       state.reports = state.reports.slice(-90);
@@ -302,13 +367,24 @@ async function handleOwner(msg) {
   if (done.length) parts.push(done.map((d) => `Done: ${d}`).join('\n'));
   if (failed.length) parts.push(failed.map((d) => `FAILED: ${d}`).join('\n'));
   if (out.question) parts.push(`QUESTION\n${out.question}`);
+  // The reply on top, then the refreshed forecast as the usual formatted report.
+  const intro = [
+    `<div style="font-size:15px;line-height:1.5">${esc(out.confirmation)}</div>`,
+    ...done.map((d) => `<div style="color:${C.good};font-size:14px;margin-top:8px">✓ ${esc(d)}</div>`),
+    ...failed.map((d) => `<div style="color:${C.bad};font-size:14px;margin-top:8px">✗ ${esc(d)}</div>`),
+    out.question ? `<div style="background:${C.soft};border-radius:6px;padding:10px 12px;margin-top:10px;font-size:14px"><b>Question:</b> ${esc(out.question)}</div>` : '',
+  ].join('');
+  let html;
   if (done.length) {
     const g = await gather();
     parts.push(`UPDATED FORECAST\n${report(g).text}`);
+    html = reportHtml(g, intro);
+  } else {
+    html = `<html><body style="margin:0;background:${C.bg}"><div style="padding:20px 12px;font-family:Arial,Helvetica,sans-serif;color:${C.ink}"><div style="max-width:600px;margin:0 auto;background:${C.card};border:1px solid ${C.line};border-radius:10px;padding:18px 20px">${intro}</div></div></body></html>`;
   }
   const id = state.nextId++;
   save();
-  await sendOwner(`[${tag(id)}] ${out.question ? 'Question' : failed.length ? 'Problem' : 'Done'}: ${done.length ? `${done.length} change${done.length > 1 ? 's' : ''}` : 'nothing changed'}`, parts.join('\n\n'));
+  await sendOwner(`[${tag(id)}] ${out.question ? 'Question' : failed.length ? 'Problem' : 'Done'}: ${done.length ? `${done.length} change${done.length > 1 ? 's' : ''}` : 'nothing changed'}`, parts.join('\n\n'), html);
   return true;
 }
 
@@ -317,4 +393,4 @@ function inventoryStatus() {
   return { lastSentDate: state.lastSentDate || null, lastRun, reports: state.reports.slice(-14), log: state.log.slice(-20) };
 }
 
-module.exports = { runInventory, handleOwner, inventoryStatus, _report: report, _gather: gather };
+module.exports = { runInventory, handleOwner, inventoryStatus, _report: report, _reportHtml: reportHtml, _gather: gather };

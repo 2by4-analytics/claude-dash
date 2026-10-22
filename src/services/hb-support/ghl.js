@@ -62,9 +62,10 @@ function render(text) {
     + inner + '</div></body></html>';
 }
 
-async function sendEmail({ contactId, conversationId, to, fromName, subject, text, replyMessageId }) {
+// `html` (optional) is sent as-is instead of rendering `text`.
+async function sendEmail({ contactId, conversationId, to, fromName, subject, text, html, replyMessageId }) {
   const body = {
-    type: 'Email', contactId, emailTo: to, subject, html: render(text),
+    type: 'Email', contactId, emailTo: to, subject, html: html || render(text),
     emailFrom: `${fromName} <hello@happybakerhq.com>`,
     ...(conversationId ? { conversationId } : {}), ...(replyMessageId ? { replyMessageId } : {}),
   };
