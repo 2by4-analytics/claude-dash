@@ -113,6 +113,7 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `GET /api/hb/support/address` | Bad-address flow: mode, batches, every flagged ShipStation order + its status |
 | `GET /api/hb/support/address/preview` | Read-only: HB ShipStation orders flagged right now + whether they're past the grace period |
 | `GET /api/hb/inventory/status` | HB inventory agent: last run, recent reports, log of Alan's replies + what they changed |
+| `GET /api/hb/inventory/forecast` | Fresh forecast JSON (nothing sent). The HB dashboard's Inventory tab pulls it on every refresh |
 | `POST /api/hb/inventory/run?send=0\|1&force=1` | Run the forecast now. `send=0` (default) returns the forecast + email text and sends nothing; `send=1` emails Alan (`force=1` even if today's already went) |
 | `GET /api/debug/coc/:clientId?campaignId&startDate&endDate` | Raw CoC responses |
 | `GET /api/debug/orders/:clientId?campaignId&startDate&endDate` | Order status/type breakdown |
