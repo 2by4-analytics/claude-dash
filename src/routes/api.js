@@ -362,6 +362,15 @@ router.post('/hb/support/mode', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// Happy Bakers inventory agent (see services/hb-inventory/index.js). Cron runs it 7:30am CT.
+const hbInventory = require('../services/hb-inventory');
+router.get('/hb/inventory/status', (req, res) => res.json(hbInventory.inventoryStatus()));
+// send=0 (default): forecast + the email text, nothing sent. send=1 emails Alan (force=1 even if already sent today).
+router.post('/hb/inventory/run', async (req, res) => {
+  try { res.json(await hbInventory.runInventory({ send: req.query.send === '1', force: req.query.force === '1' })); }
+  catch (e) { res.status(502).json({ error: e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 300)}` : e.message }); }
+});
+
 // GET /api/coc-relay/:resource?loginId=X&campaignId=..&startDate=M/D/YY&...
 // Read-only CoC passthrough for callers without a whitelisted IP (CoC's API
 // allowlists by IP; Vercel has no static egress). Used by the Happy Bakers

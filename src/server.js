@@ -92,6 +92,14 @@ cron.schedule('*/5 * * * *', () => {
   runHbSupport().catch((e) => console.error('[hb-support] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
+// 7:30am CT daily: Happy Bakers inventory agent — forecast each month's Box item and
+// email Alan an [HB-INV-n] report (his replies are routed through the support agent).
+const { runInventory } = require('./services/hb-inventory');
+cron.schedule('30 7 * * *', () => {
+  if (!process.env.HB_GHL_PIT) return;
+  runInventory().catch((e) => console.error('[hb-inventory] cron failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
 const server = app.listen(PORT, () => {
   console.log(`Dashboard running on port ${PORT}`);
 });

@@ -21,6 +21,7 @@ const coc = require('./coc');
 const { callTool } = require('./llm');
 const prompt = require('./prompt');
 const address = require('./address');
+const inventory = require('../hb-inventory');
 
 const OWNER = () => (process.env.HB_SUPPORT_ALAN_EMAIL || 'alan@2by4llc.com').toLowerCase();
 const OUR_ADDRESSES = /@(mg\.)?happybakerhq\.com$/i;
@@ -359,7 +360,7 @@ async function runHbSupport() {
         if (!msgs.length) continue;
         const ownerMsgs = msgs.filter((x) => x.from === OWNER());
         const custMsgs = msgs.filter((x) => x.from !== OWNER() && !OUR_ADDRESSES.test(x.from));
-        for (const om of ownerMsgs) { if (!(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); summary.owner++; }
+        for (const om of ownerMsgs) { if (!(await inventory.handleOwner(om)) && !(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); summary.owner++; }
         const email = custMsgs.filter((x) => x.type === 'TYPE_EMAIL' && x.from);
         const other = custMsgs.filter((x) => x.type !== 'TYPE_EMAIL');
         if (email.length) {
