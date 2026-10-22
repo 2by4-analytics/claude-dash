@@ -25,6 +25,9 @@ const inventory = require('../hb-inventory');
 
 const OWNER = () => (process.env.HB_SUPPORT_ALAN_EMAIL || 'alan@2by4llc.com').toLowerCase();
 const OUR_ADDRESSES = /@(mg\.)?happybakerhq\.com$/i;
+// Automated senders are never customers: dropped before Claude or a case (Alan 10-22, after TestFlight spam made
+// HB-CS-12/27/28). Not mailer-daemon/postmaster: a bounce of one of our replies should still reach Alan.
+const AUTOMATED_SENDERS = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|notifications?)@|^testflight[^@]*@|@email\.apple\.com$/i;
 const AUTO_REFUND_MAX = () => Number(process.env.HB_SUPPORT_AUTO_REFUND_MAX || 75);
 const tag = (id) => `HB-CS-${id}`;
 const money = (n) => `$${Number(n || 0).toFixed(2)}`;
@@ -370,7 +373,8 @@ async function runHbSupport() {
         msgs = await inboundEmails(conv, since, seen);
         if (!msgs.length) continue;
         const ownerMsgs = msgs.filter((x) => x.from === OWNER());
-        const custMsgs = msgs.filter((x) => x.from !== OWNER() && !OUR_ADDRESSES.test(x.from));
+        const custMsgs = msgs.filter((x) => x.from !== OWNER() && !OUR_ADDRESSES.test(x.from) && !AUTOMATED_SENDERS.test(x.from));
+        msgs.filter((x) => AUTOMATED_SENDERS.test(x.from)).forEach((x) => console.log('[hb-support] ignored automated sender', x.from, x.subject || ''));
         for (const om of ownerMsgs) { if (!(await inventory.handleOwner(om)) && !(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); summary.owner++; }
         const email = custMsgs.filter((x) => x.type === 'TYPE_EMAIL' && x.from);
         const other = custMsgs.filter((x) => x.type !== 'TYPE_EMAIL');
