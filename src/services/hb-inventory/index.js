@@ -257,7 +257,12 @@ async function runInventory({ send = true, force = false } = {}) {
     if (send && !force && state.lastSentDate === today) return { skipped: `already sent ${tag(state.reports[state.reports.length - 1]?.id)} today` };
     const g = await gather();
     const r = report(g);
-    const out = { at: new Date().toISOString(), subject: r.subject, text: r.text, html: reportHtml(g), items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured };
+    const out = {
+      at: new Date().toISOString(), subject: r.subject, text: r.text, html: reportHtml(g), items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured,
+      // Everything the HB dashboard's Inventory tab shows (GET /api/hb/inventory/forecast).
+      forecast: g.f, cfg: g.cfg, calendar: g.L.calendar.map(({ month, sku, notes }) => ({ month, sku, notes })),
+      names: Object.fromEntries(Object.values(g.L.items).map((i) => [i.sku, i.name])),
+    };
     if (send) {
       const id = state.nextId++;
       await sendOwner(`[${tag(id)}] ${r.subject}`, r.text, reportHtml(g));

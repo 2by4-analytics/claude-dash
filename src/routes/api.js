@@ -365,6 +365,14 @@ router.post('/hb/support/mode', (req, res) => {
 // Happy Bakers inventory agent (see services/hb-inventory/index.js). Cron runs it 7:30am CT.
 const hbInventory = require('../services/hb-inventory');
 router.get('/hb/inventory/status', (req, res) => res.json(hbInventory.inventoryStatus()));
+// Fresh forecast, nothing sent. The HB dashboard (dash.happybakerhq.com) pulls this on refresh.
+router.get('/hb/inventory/forecast', async (req, res) => {
+  try {
+    const r = await hbInventory.runInventory({ send: false });
+    if (r.skipped) return res.status(409).json({ error: r.skipped });
+    res.json({ at: r.at, subject: r.subject, forecast: r.forecast, cfg: r.cfg, calendar: r.calendar, names: r.names });
+  } catch (e) { res.status(502).json({ error: e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 300)}` : e.message }); }
+});
 // send=0 (default): forecast + the email text, nothing sent. send=1 emails Alan (force=1 even if already sent today).
 router.post('/hb/inventory/run', async (req, res) => {
   try { res.json(await hbInventory.runInventory({ send: req.query.send === '1', force: req.query.force === '1' })); }
