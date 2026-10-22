@@ -47,7 +47,7 @@ function stripQuoted(text) {
 
 async function emailMessage(messageId) {
   const m = (await http().get(`/conversations/messages/email/${messageId}`)).data.emailMessage || {};
-  return { from: m.from || '', to: m.to || [], subject: m.subject || '', at: m.dateAdded || null, direction: m.direction || '', text: stripQuoted(htmlToText(m.body)), attachments: m.attachments || [] };
+  return { from: m.from || '', to: m.to || [], subject: m.subject || '', at: m.dateAdded || null, direction: m.direction || '', text: stripQuoted(htmlToText(m.body)), html: m.body || '', attachments: m.attachments || [] };
 }
 
 // Same markup GHL's own composer sends, with an explicit normal weight: plain <p> HTML
@@ -80,4 +80,4 @@ async function contactIdFor(email, firstName = 'Alan', lastName = '') {
   return up.data.contact.id;
 }
 
-module.exports = { recentConversations, getConversation, getMessages, emailMessage, sendEmail, contactIdFor, link, render };
+module.exports = { recentConversations, getConversation, getMessages, emailMessage, sendEmail, contactIdFor, link, render, htmlToText };

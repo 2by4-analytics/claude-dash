@@ -305,11 +305,29 @@ const ACTION_TOOL = {
         },
       },
       question: { type: 'string', description: 'If something needed is missing or ambiguous (e.g. the quantity), ask instead of guessing. Empty when all clear.' },
-      confirmation: { type: 'string', description: 'One or two plain sentences on what you understood' },
+      confirmation: { type: 'string', description: 'One or two plain sentences on what you read in his email. Say "Read:" not "Logged": the lines under it report what actually got written' },
     },
     required: ['actions', 'confirmation'],
   },
 };
+
+// Temu order emails draw the line items and totals as images (pos-u / pfs-u on
+// file.temu.com, plus the commimg header). Skip the "recommended for you" grid
+// (cmsgr-ud) and static icons on aimg.kwcdn.com.
+const TEMU_IMG = /^https:\/\/(pos-u\.file\.temu\.com\/cmsg-ud\/|pfs-u\.file\.temu\.com\/|commimg\.us\.kwcdn\.com\/mail-combine)/;
+async function emailImages(html) {
+  const urls = [...new Set([...String(html || '').matchAll(/<img[^>]+src="([^"]+)"/gi)].map((m) => m[1].replace(/&amp;/g, '&')))].filter((u) => TEMU_IMG.test(u)).slice(0, 10);
+  const out = [];
+  for (const u of urls) {
+    try {
+      const r = await axios.get(u, { responseType: 'arraybuffer', timeout: 15000 });
+      const type = String(r.headers['content-type'] || '').split(';')[0];
+      if (/^image\/(png|jpeg|gif|webp)$/.test(type) && r.data.length < 3e6) out.push({ media_type: type, data: Buffer.from(r.data).toString('base64') });
+    } catch { /* one missing image shouldn't stop the rest */ }
+  }
+  return out;
+}
+const poNumbers = (s) => [...new Set(String(s || '').match(/PO-\d{3}-\d{10,}/g) || [])];
 
 function isInventoryMail(msg) {
   return /HB-INV/i.test(`${msg.subject} ${msg.text}`) || /\btemu\b/i.test(msg.subject || '');
@@ -320,10 +338,15 @@ async function handleOwner(msg) {
   load();
   const L = await ledger.read();
   const today = ctToday();
+  // A forward's text is all "quoted", so read the whole body, not msg.text.
+  const body = msg.html ? ghl.htmlToText(msg.html).slice(0, 6000) : msg.text;
+  const images = await emailImages(msg.html);
   const out = await callTool({
+    images,
     system: [
       'You keep the Happy Bakers inventory Ledger for Alan, the owner. The Box is a monthly subscription kit; each calendar month ships one item (Box Calendar). Alan buys stock himself (mostly Temu) and tells you about it by email.',
-      'Only record what he actually said. Never invent a quantity, price or date: if the quantity of a purchase is missing, ask. Forwarded Temu emails often have line items only in images, so the text may lack quantity: ask for it.',
+      'Only record what he actually said or what the forwarded order shows. Never invent a quantity, price or date: if the quantity of a purchase is missing, ask.',
+      'Forwarded Temu order emails draw the line items (name, variant, unit price, ×qty) and the payment summary (item total, bonuses, coupons, tax, Order total) as images; those are attached when present. Read them. Ignore "add more items" and recommendation images. One log_purchase per line item; split the Order total across lines by their item prices. Put the order ID (PO-…) plus the line, price, coupons and tax math in notes, like the existing Inventory rows. If the images are missing or unreadable, ask for the quantity and total.',
       'Money: total_cost is what was actually paid (after coupons, with tax). If he gives only a unit price, use unit_cost.',
       'Settings he can change: ' + Object.entries(SETTING_KEYS).map(([k, [n]]) => `${k} (${n})`).join('; ') + '. For "assume N signups a day" set inv_signups_per_day; "go back to the real signup pace" sets it to "".',
       `Today is ${today}.`,
@@ -332,16 +355,20 @@ async function handleOwner(msg) {
     prompt: [
       `ITEMS (sku · name · avg unit cost)\n${Object.values(L.items).map((i) => `${i.sku} · ${i.name} · ${i.unitCost ?? '?'}`).join('\n')}`,
       `BOX CALENDAR\n${L.calendar.map((c) => `${c.month}: ${c.sku || 'TBD'}`).join('\n') || '(empty)'}`,
-      `ALAN'S EMAIL (subject "${msg.subject}")\n${msg.text}`,
+      `ALAN'S EMAIL (subject "${msg.subject}")${images.length ? ` — ${images.length} image${images.length > 1 ? 's' : ''} attached above` : ''}\n${body}`,
     ].join('\n\n'),
   });
 
-  const done = [], failed = [];
+  const done = [], failed = [], skipped = [];
   for (const a of out.actions || []) {
     try {
       if (a.type === 'log_purchase') {
         const sku = String(a.sku || '').toUpperCase();
         if (!sku || !(a.qty > 0) || (a.total_cost == null && a.unit_cost == null)) throw new Error('purchase is missing the SKU, quantity or cost');
+        // The same order forwarded twice must not count twice.
+        const po = poNumbers(`${a.notes} ${msg.subject}`)[0];
+        const dupe = po && L.inventory.find((r) => r.sku === sku && String(r.notes || '').includes(po));
+        if (dupe) { skipped.push(`${po} is already in the Ledger (${dupe.qty} × ${sku}, ${dupe.date}). Nothing added.`); continue; }
         if (!L.items[sku]) { await ledger.addItem({ sku, name: a.item_name || sku, notes: 'Added by the inventory agent' }); L.items[sku] = { sku, name: a.item_name || sku }; }
         const unit = a.total_cost != null ? a.total_cost / a.qty : a.unit_cost;
         await ledger.addPurchase({ date: a.date || today, sku, qty: a.qty, unitCost: Number(unit.toFixed(4)), paidBy: a.paid_by || 'Alan', location: 'Shipsem', notes: `${a.notes || ''}${a.total_cost != null ? ` (${money(a.total_cost)} total)` : ''} [logged by inventory agent from Alan's email]`.trim() });
@@ -364,18 +391,20 @@ async function handleOwner(msg) {
       }
     } catch (e) { failed.push(`${a.type}: ${e.message}`); }
   }
-  state.log.push({ at: new Date().toISOString(), subject: msg.subject, text: msg.text.slice(0, 2000), actions: out.actions, done, failed, question: out.question || null });
+  state.log.push({ at: new Date().toISOString(), subject: msg.subject, text: body.slice(0, 2000), images: images.length, actions: out.actions, done, failed, skipped, question: out.question || null });
   state.log = state.log.slice(-200);
   save();
 
   const parts = [out.confirmation];
   if (done.length) parts.push(done.map((d) => `Done: ${d}`).join('\n'));
+  if (skipped.length) parts.push(skipped.map((d) => `Skipped: ${d}`).join('\n'));
   if (failed.length) parts.push(failed.map((d) => `FAILED: ${d}`).join('\n'));
   if (out.question) parts.push(`QUESTION\n${out.question}`);
   // The reply on top, then the refreshed forecast as the usual formatted report.
   const intro = [
     `<div style="font-size:15px;line-height:1.5">${esc(out.confirmation)}</div>`,
     ...done.map((d) => `<div style="color:${C.good};font-size:14px;margin-top:8px">✓ ${esc(d)}</div>`),
+    ...skipped.map((d) => `<div style="font-size:14px;margin-top:8px">= ${esc(d)}</div>`),
     ...failed.map((d) => `<div style="color:${C.bad};font-size:14px;margin-top:8px">✗ ${esc(d)}</div>`),
     out.question ? `<div style="background:${C.soft};border-radius:6px;padding:10px 12px;margin-top:10px;font-size:14px"><b>Question:</b> ${esc(out.question)}</div>` : '',
   ].join('');
@@ -389,7 +418,7 @@ async function handleOwner(msg) {
   }
   const id = state.nextId++;
   save();
-  await sendOwner(`[${tag(id)}] ${out.question ? 'Question' : failed.length ? 'Problem' : 'Done'}: ${done.length ? `${done.length} change${done.length > 1 ? 's' : ''}` : 'nothing changed'}`, parts.join('\n\n'), html);
+  await sendOwner(`[${tag(id)}] ${out.question ? 'Question' : failed.length ? 'Problem' : 'Done'}: ${done.length ? `${done.length} change${done.length > 1 ? 's' : ''}` : skipped.length ? 'already logged' : 'nothing changed'}`, parts.join('\n\n'), html);
   return true;
 }
 
@@ -398,4 +427,4 @@ function inventoryStatus() {
   return { lastSentDate: state.lastSentDate || null, lastRun, reports: state.reports.slice(-14), log: state.log.slice(-20) };
 }
 
-module.exports = { runInventory, handleOwner, inventoryStatus, _report: report, _reportHtml: reportHtml, _gather: gather };
+module.exports = { runInventory, handleOwner, inventoryStatus, _emailImages: emailImages, _report: report, _reportHtml: reportHtml, _gather: gather };

@@ -343,7 +343,7 @@ async function inboundEmails(conv, since, seen) {
       const at = e.at || m.dateAdded;
       const from = addr(e.from);
       if (e.direction === 'outbound' || OUR_ADDRESSES.test(from) || new Date(at).getTime() < since) { seen.add(emailId); continue; }
-      out.push({ id: emailId, threadId: m.id, at, type: 'TYPE_EMAIL', from, fromName: displayName(e.from), subject: e.subject, text: e.text.slice(0, 6000), attachments: e.attachments.length });
+      out.push({ id: emailId, threadId: m.id, at, type: 'TYPE_EMAIL', from, fromName: displayName(e.from), subject: e.subject, text: e.text.slice(0, 6000), html: e.html, attachments: e.attachments.length });
     }
   }
   return out.sort((a, b) => new Date(a.at) - new Date(b.at));
