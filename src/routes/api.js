@@ -331,11 +331,11 @@ router.get('/debug/coc-campaign/:clientId', async (req, res) => {
 });
 
 // Happy Bakers CoC → GHL sync (see services/hb-ghl-sync.js). Cron runs it every
-// 15 min; these let Alan backfill (?days=30) or preview (?dry=1) on demand.
+// 15 min; these let Alan backfill (?days=30&buyersOnly=1) or preview (?dry=1) on demand.
 const { runHbGhlSync, hbGhlLastRun } = require('../services/hb-ghl-sync');
 router.post('/hb/ghl-sync', async (req, res) => {
   const days = Math.min(Math.max(Number(req.query.days) || 3, 1), 120);
-  try { res.json(await runHbGhlSync({ days, dryRun: req.query.dry === '1' })); }
+  try { res.json(await runHbGhlSync({ days, dryRun: req.query.dry === '1', buyersOnly: req.query.buyersOnly === '1' })); }
   catch (e) { res.status(502).json({ error: e.message }); }
 });
 router.get('/hb/ghl-sync/status', (req, res) => res.json({ lastRun: hbGhlLastRun(), configured: !!process.env.HB_GHL_PIT }));

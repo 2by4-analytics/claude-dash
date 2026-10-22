@@ -173,7 +173,7 @@ async function pushPerson({ http, locationId }, p) {
 }
 
 let running = false;
-async function runHbGhlSync({ days = 3, dryRun = false } = {}) {
+async function runHbGhlSync({ days = 3, dryRun = false, buyersOnly = false } = {}) {
   if (running) return { skipped: 'already running' };
   running = true;
   const started = Date.now();
@@ -196,14 +196,20 @@ async function runHbGhlSync({ days = 3, dryRun = false } = {}) {
     catch (e) { summary.errors.push(`pipeline lookup: ${e.message}`); }
     if (pipe) { const missing = pipe.stages.filter((s) => !s.id).map((s) => s.name); if (missing.length) summary.errors.push(`stages missing in "${PIPELINE}": ${missing.join(', ')}`); }
     summary.opportunities = { created: 0, moved: 0, lost: 0 };
-    for (const p of list) {
-      try {
-        const { id } = await pushPerson(g, p); summary.pushed++;
-        if (pipe && (p.buyer || p.canceled)) { const r = await syncOpportunity(g, pipe, id, p); if (r) summary.opportunities[r]++; }
+    // buyersOnly skips partials (a backfill re-push of thousands of partials is what made it run >1h);
+    // 4 workers stay far under GHL's 100 req / 10 s.
+    const queue = buyersOnly ? list.filter((p) => p.buyer || p.canceled) : [...list];
+    const worker = async () => {
+      for (let p; (p = queue.shift());) {
+        try {
+          const { id } = await pushPerson(g, p); summary.pushed++;
+          if (pipe && (p.buyer || p.canceled)) { const r = await syncOpportunity(g, pipe, id, p); if (r) summary.opportunities[r]++; }
+        }
+        catch (e) { summary.errors.push(`${p.email.replace(/^(.).*@/, '$1***@')}: ${e.response ? e.response.status + ' ' + JSON.stringify(e.response.data).slice(0, 160) : e.message}`); }
+        await new Promise((r) => setTimeout(r, 150));
       }
-      catch (e) { summary.errors.push(`${p.email.replace(/^(.).*@/, '$1***@')}: ${e.response ? e.response.status + ' ' + JSON.stringify(e.response.data).slice(0, 160) : e.message}`); }
-      await new Promise((r) => setTimeout(r, 150));
-    }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
     summary.ms = Date.now() - started;
     console.log('[hb-ghl] sync', JSON.stringify({ ...summary, errors: summary.errors.length }));
     if (summary.errors.length) console.error('[hb-ghl] errors', summary.errors.slice(0, 5).join(' | '));
