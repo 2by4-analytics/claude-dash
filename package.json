@@ -8,12 +8,14 @@
     "dev": "nodemon src/server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
     "date-fns": "^2.30.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "googleapis": "^171.4.0",
+    "imapflow": "^2.9.1",
+    "mailparser": "^3.12.4",
     "node-cron": "^3.0.3"
   },
   "devDependencies": {

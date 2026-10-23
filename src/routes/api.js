@@ -379,6 +379,14 @@ router.post('/hb/inventory/run', async (req, res) => {
   catch (e) { res.status(502).json({ error: e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 300)}` : e.message }); }
 });
 
+// Temu → 3PL sheet sync on its own (the 7:30 run does it too). write=0 reads mail + builds rows, sheet untouched.
+router.post('/hb/inventory/temu', async (req, res) => {
+  try {
+    const L = await require('../services/hb-inventory/ledger').read();
+    res.json(await require('../services/hb-inventory/temu').syncTemu({ ledgerInventory: L.inventory, write: req.query.write !== '0' }));
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 // GET /api/coc-relay/:resource?loginId=X&campaignId=..&startDate=M/D/YY&...
 // Read-only CoC passthrough for callers without a whitelisted IP (CoC's API
 // allowlists by IP; Vercel has no static egress). Used by the Happy Bakers

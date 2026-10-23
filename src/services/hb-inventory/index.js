@@ -17,6 +17,7 @@ const ghl = require('../hb-support/ghl');
 const { callTool } = require('../hb-support/llm');
 const ledger = require('./ledger');
 const { forecast, addDays } = require('./forecast');
+const { syncTemu, emailImages } = require('./temu');
 
 const OWNER = () => (process.env.HB_SUPPORT_ALAN_EMAIL || 'alan@2by4llc.com').toLowerCase();
 const tag = (id) => `HB-INV-${id}`;
@@ -118,7 +119,33 @@ async function gather() {
 }
 
 // ─── report ──────────────────────────────────────────────────────────────────
-function report({ L, cfg, f }) {
+// The Temu → 3PL tracking sheet (temu.js), as report lines. Not-logged POs are
+// ignored when the sheet's Notes say sample/test (e.g. the whisk).
+function temuLines(t) {
+  if (t.error) return ['TEMU SHIPMENTS', `  Sync FAILED: ${t.error}. The 3PL sheet was not updated today.`];
+  const out = ['TEMU SHIPMENTS (3PL sheet updated)'];
+  out.push(`  ${t.packages} packages: ${t.delivered} delivered, ${t.inTransit.length} on the way${t.notShipped.length ? `, ${t.notShipped.length} order${t.notShipped.length > 1 ? 's' : ''} not shipped yet` : ''}.`);
+  for (const p of t.newlyDelivered) out.push(`  Delivered: ${p.units} × ${p.item} (${p.carrier} ${p.tracking}, ${p.po})`);
+  for (const p of t.inTransit) out.push(`  On the way: ${p.units} × ${p.item} · ${p.status} (${p.carrier} ${p.tracking})`);
+  for (const po of t.notLogged) out.push(`  NOT IN THE LEDGER: ${po}. Forward its confirmation to log it, or note "sample" on it in the sheet.`);
+  for (const e of t.errors) out.push(`  CHECK: ${e}`);
+  out.push(`  Sheet: ${t.sheetUrl}`);
+  return out;
+}
+
+function temuHtml(t, box, h, C) {
+  const li = (color, s) => `<div style="font-size:14px;margin:6px 0;${color ? `color:${color}` : ''}">${s}</div>`;
+  if (t.error) return box(h('Temu shipments') + li(C.bad, `✗ Sync failed: ${esc(t.error)}. The 3PL sheet was not updated today.`), C.bad);
+  const parts = [li(null, `<b>${t.packages}</b> packages · <b style="color:${C.good}">${t.delivered}</b> delivered · <b>${t.inTransit.length}</b> on the way${t.notShipped.length ? ` · ${t.notShipped.length} not shipped yet` : ''}`)];
+  for (const p of t.newlyDelivered) parts.push(li(C.good, `✓ Delivered: ${p.units} × ${esc(p.item)} <span style="color:${C.mute}">${p.carrier} ${p.tracking}</span>`));
+  for (const p of t.inTransit) parts.push(li(null, `→ ${p.units} × ${esc(p.item)} · ${esc(p.status)} <span style="color:${C.mute}">${p.carrier} ${p.tracking}</span>`));
+  for (const po of t.notLogged) parts.push(li(C.bad, `✗ ${po} isn't in the Ledger. Forward its confirmation to log it, or note "sample" on it in the sheet.`));
+  for (const e of t.errors) parts.push(li(C.bad, `Check: ${esc(e)}`));
+  parts.push(`<div style="margin-top:10px"><a href="${t.sheetUrl}" style="color:${C.terra};font-weight:700">Open the 3PL sheet</a></div>`);
+  return box(h('Temu shipments') + parts.join(''), t.errors.length || t.notLogged.length ? C.bad : C.line);
+}
+
+function report({ L, cfg, f, temu }) {
   const lines = [];
   const headline = [];
   if (!L.calendar.length) {
@@ -150,6 +177,12 @@ function report({ L, cfg, f }) {
     if (g.daysAway <= cfg.leadDays + 21) headline.push(`${monthName(g.month)} item needed`);
   }
   if (f.gaps.length) lines.push('');
+  if (temu) {
+    lines.push(...temuLines(temu));
+    lines.push('');
+    if (temu.error || temu.errors?.length) headline.push('Temu sync problem');
+    else if (temu.notLogged?.length) headline.push(`${temu.notLogged.length} Temu order${temu.notLogged.length > 1 ? 's' : ''} not in the Ledger`);
+  }
 
   lines.push('BOXES BY MONTH (expected, still to bill)');
   for (const [m, n] of Object.entries(f.months).sort()) lines.push(`  ${monthName(m)}: ~${fmt(n)}${f.boxesBilledByMonth[m] ? ` (+${fmt(f.boxesBilledByMonth[m])} already billed)` : ''} · ${L.calendar.find((c) => c.month === m)?.sku || 'item TBD'}`);
@@ -171,7 +204,7 @@ function report({ L, cfg, f }) {
 const C = { bg: '#fbf6ec', card: '#fffdf8', ink: '#3b2a20', mute: '#8a7566', line: '#eadfcb', terra: '#c4643f', honey: '#c99a4e', good: '#4f7d4a', bad: '#b4432f', soft: '#f4ead8' };
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function reportHtml({ L, cfg, f }, intro) {
+function reportHtml({ L, cfg, f, temu }, intro) {
   const box = (inner, border = C.line) => `<div style="background:${C.card};border:1px solid ${border};border-radius:10px;padding:18px 20px;margin:0 0 16px">${inner}</div>`;
   const h = (t) => `<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:${C.mute};font-weight:700;margin:0 0 10px">${t}</div>`;
   const row = (k, v, strong) => `<tr><td style="padding:6px 0;color:${C.mute};border-bottom:1px solid ${C.line}">${k}</td><td align="right" style="padding:6px 0;border-bottom:1px solid ${C.line};${strong ? `font-weight:700;color:${strong}` : ''}">${v}</td></tr>`;
@@ -213,6 +246,7 @@ function reportHtml({ L, cfg, f }, intro) {
     parts.push(callout(C.bad, '#f8e9e6', `${monthName(g.month)}: no item chosen yet`,
       `~${fmt(g.boxes)} boxes. The first one ships ${md(g.firstBill)} (${g.daysAway} days away). With a ${cfg.leadDays}-day lead time, <b>pick it by ${md(addDays(g.firstBill, -cfg.leadDays - 3))}</b>.`).replace('margin:14px 0 0', 'margin:0 0 16px'));
   }
+  if (temu) parts.push(temuHtml(temu, box, h, C));
   parts.push(box(h('Boxes by month · still to bill') + table(Object.entries(f.months).sort().map(([m, n]) => {
     const sku = L.calendar.find((c) => c.month === m)?.sku;
     return row(`${monthName(m)} · ${sku ? esc(sku) : `<span style="color:${C.bad}">item TBD</span>`}`, `~${fmt(n)}${f.boxesBilledByMonth[m] ? ` <span style="color:${C.mute}">(+${fmt(f.boxesBilledByMonth[m])} billed)</span>` : ''}`);
@@ -227,7 +261,7 @@ function reportHtml({ L, cfg, f }, intro) {
 
   return `<html><body style="margin:0;padding:0;background:${C.bg}"><div style="background:${C.bg};padding:20px 12px;font-family:Arial,Helvetica,sans-serif;color:${C.ink}"><div style="max-width:600px;margin:0 auto">`
     + `<div style="font-size:13px;color:${C.mute};margin:0 0 4px">The Happy Bakers · Inventory · ${md(f.today)}</div>`
-    + `<div style="font-size:22px;font-weight:700;margin:0 0 16px">${esc(report({ L, cfg, f }).subject)}</div>`
+    + `<div style="font-size:22px;font-weight:700;margin:0 0 16px">${esc(report({ L, cfg, f, temu }).subject)}</div>`
     + parts.join('') + '</div></div></body></html>';
 }
 
@@ -256,9 +290,11 @@ async function runInventory({ send = true, force = false } = {}) {
     const today = ctToday();
     if (send && !force && state.lastSentDate === today) return { skipped: `already sent ${tag(state.reports[state.reports.length - 1]?.id)} today` };
     const g = await gather();
+    // The daily email also refreshes the Temu → 3PL sheet. A failure is reported in the email, never silent.
+    if (send) g.temu = await syncTemu({ ledgerInventory: g.L.inventory }).catch((e) => ({ error: e.message }));
     const r = report(g);
     const out = {
-      at: new Date().toISOString(), subject: r.subject, text: r.text, html: reportHtml(g), items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured,
+      at: new Date().toISOString(), subject: r.subject, text: r.text, html: reportHtml(g), temu: g.temu ? { ...g.temu, rows: undefined } : undefined, items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured,
       // Everything the HB dashboard's Inventory tab shows (GET /api/hb/inventory/forecast).
       forecast: g.f, cfg: g.cfg, calendar: g.L.calendar.map(({ month, sku, notes }) => ({ month, sku, notes })),
       names: Object.fromEntries(Object.values(g.L.items).map((i) => [i.sku, i.name])),
@@ -311,22 +347,6 @@ const ACTION_TOOL = {
   },
 };
 
-// Temu order emails draw the line items and totals as images (pos-u / pfs-u on
-// file.temu.com, plus the commimg header). Skip the "recommended for you" grid
-// (cmsgr-ud) and static icons on aimg.kwcdn.com.
-const TEMU_IMG = /^https:\/\/(pos-u\.file\.temu\.com\/cmsg-ud\/|pfs-u\.file\.temu\.com\/|commimg\.us\.kwcdn\.com\/mail-combine)/;
-async function emailImages(html) {
-  const urls = [...new Set([...String(html || '').matchAll(/<img[^>]+src="([^"]+)"/gi)].map((m) => m[1].replace(/&amp;/g, '&')))].filter((u) => TEMU_IMG.test(u)).slice(0, 10);
-  const out = [];
-  for (const u of urls) {
-    try {
-      const r = await axios.get(u, { responseType: 'arraybuffer', timeout: 15000 });
-      const type = String(r.headers['content-type'] || '').split(';')[0];
-      if (/^image\/(png|jpeg|gif|webp)$/.test(type) && r.data.length < 3e6) out.push({ media_type: type, data: Buffer.from(r.data).toString('base64') });
-    } catch { /* one missing image shouldn't stop the rest */ }
-  }
-  return out;
-}
 const poNumbers = (s) => [...new Set(String(s || '').match(/PO-\d{3}-\d{10,}/g) || [])];
 
 function isInventoryMail(msg) {
