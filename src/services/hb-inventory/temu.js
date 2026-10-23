@@ -14,6 +14,9 @@
 // Output: the "Temu Shipments → 3PL" sheet (HB_TEMU_SHEET_ID), rewritten in place so
 // the link the 3PL has keeps working. Notes typed into the sheet are kept across runs.
 
+// imapflow/mailparser call crypto.getRandomValues, which isn't a global on Railway's Node.
+if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
+
 const axios = require('axios');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
@@ -227,7 +230,14 @@ async function writeSheet(tab, rows) {
 
 // ─── run ─────────────────────────────────────────────────────────────────────
 // ledgerInventory: the Ledger's Inventory rows (to flag POs nobody logged). write=false = dry run.
-async function syncTemu({ ledgerInventory = null, write = true } = {}) {
+let running = null;
+function syncTemu(opts) {
+  // The hourly sync and the 7:30 email can overlap: share one run.
+  if (!running) running = doSync(opts).finally(() => { running = null; });
+  return running;
+}
+
+async function doSync({ ledgerInventory = null, write = true } = {}) {
   load();
   const errors = [];
   const fresh = await fetchNew();
@@ -249,7 +259,7 @@ async function syncTemu({ ledgerInventory = null, write = true } = {}) {
         // Unit prices are shown after item discounts, so they may add to the Subtotal instead of a struck-through Item(s) total.
         const off = (x) => x == null || Math.abs(sum - x) > 0.02;
         const check = r.item_total && off(r.item_total) && off(r.subtotal) ? `items add to $${sum.toFixed(2)} but the receipt says $${r.item_total}` : null;
-        if (items.length || !o) state.orders[po] = { items, itemTotal: r.item_total ?? null, orderTotal: r.order_total ?? null, from: kind, check, unreadable: r.unreadable || null };
+        if (items.length || !o) state.orders[po] = { items, itemTotal: r.item_total ?? null, subtotal: r.subtotal ?? null, orderTotal: r.order_total ?? null, from: kind, check, unreadable: r.unreadable || null };
         if (check) errors.push(`${po}: ${check}`);
         if (!items.length) errors.push(`${po}: couldn't read the items (${r.unreadable || 'no rows'})`);
       } catch (e) { errors.push(`${po}: reading the order failed: ${e.message}`); }
@@ -294,6 +304,8 @@ async function syncTemu({ ledgerInventory = null, write = true } = {}) {
     notShipped: [...new Set(rows.filter((r) => !r.tracking).map((r) => r.po))],
     // A sample/test order (noted so in the sheet) isn't stock, so it needn't be in the Ledger.
     notLogged: [...new Set(rows.filter((r) => r.ledger === 'NOT LOGGED' && !/sample|test/i.test(r.note)).map((r) => r.po))],
+    // What the inventory agent needs to log those orders itself.
+    orders: Object.fromEntries([...new Set(rows.map((r) => r.po))].map((po) => [po, { ...state.orders[po], ordered: rows.find((r) => r.po === po).ordered }])),
     rows,
   };
 }

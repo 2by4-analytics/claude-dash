@@ -379,11 +379,15 @@ router.post('/hb/inventory/run', async (req, res) => {
   catch (e) { res.status(502).json({ error: e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 300)}` : e.message }); }
 });
 
-// Temu → 3PL sheet sync on its own (the 7:30 run does it too). write=0 reads mail + builds rows, sheet untouched.
+// Temu → 3PL sheet + Ledger logging now (the hourly cron and the 7:30 run do it too).
+// write=0: read mail + build rows only (sheet and Ledger untouched). notify=0: no email to Alan.
 router.post('/hb/inventory/temu', async (req, res) => {
   try {
-    const L = await require('../services/hb-inventory/ledger').read();
-    res.json(await require('../services/hb-inventory/temu').syncTemu({ ledgerInventory: L.inventory, write: req.query.write !== '0' }));
+    if (req.query.write === '0') {
+      const L = await require('../services/hb-inventory/ledger').read();
+      return res.json(await require('../services/hb-inventory/temu').syncTemu({ ledgerInventory: L.inventory, write: false }));
+    }
+    res.json(await hbInventory.runTemuSync({ notify: req.query.notify !== '0' }));
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 

@@ -94,10 +94,17 @@ cron.schedule('*/5 * * * *', () => {
 
 // 7:30am CT daily: Happy Bakers inventory agent — forecast each month's Box item and
 // email Alan an [HB-INV-n] report (his replies are routed through the support agent).
-const { runInventory } = require('./services/hb-inventory');
+const { runInventory, runTemuSync } = require('./services/hb-inventory');
 cron.schedule('30 7 * * *', () => {
   if (!process.env.HB_GHL_PIT) return;
   runInventory().catch((e) => console.error('[hb-inventory] cron failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
+// Hourly at :15: Temu mail in alan2by4@gmail → 3PL sheet + log new orders to the Ledger
+// (emails Alan only when it logs something or can't). Skips 7:15 so the 7:30 report owns that hour.
+cron.schedule('15 0-6,8-23 * * *', () => {
+  if (!process.env.TEMU_GMAIL_USER || !process.env.ANTHROPIC_API_KEY) return;
+  runTemuSync().catch((e) => console.error('[hb-inventory] temu sync failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
 const server = app.listen(PORT, () => {

@@ -119,15 +119,16 @@ async function gather() {
 }
 
 // ─── report ──────────────────────────────────────────────────────────────────
-// The Temu → 3PL tracking sheet (temu.js), as report lines. Not-logged POs are
-// ignored when the sheet's Notes say sample/test (e.g. the whisk).
+// The Temu → 3PL tracking sheet (temu.js), as report lines.
 function temuLines(t) {
   if (t.error) return ['TEMU SHIPMENTS', `  Sync FAILED: ${t.error}. The 3PL sheet was not updated today.`];
   const out = ['TEMU SHIPMENTS (3PL sheet updated)'];
   out.push(`  ${t.packages} packages: ${t.delivered} delivered, ${t.inTransit.length} on the way${t.notShipped.length ? `, ${t.notShipped.length} order${t.notShipped.length > 1 ? 's' : ''} not shipped yet` : ''}.`);
+  for (const d of t.loggedSince || []) out.push(`  Logged to the Ledger from Gmail: ${d}`);
+  for (const d of t.logFailed || []) out.push(`  COULDN'T LOG ${d}. Reply with the SKU, quantity and total.`);
   for (const p of t.newlyDelivered) out.push(`  Delivered: ${p.units} × ${p.item} (${p.carrier} ${p.tracking}, ${p.po})`);
   for (const p of t.inTransit) out.push(`  On the way: ${p.units} × ${p.item} · ${p.status} (${p.carrier} ${p.tracking})`);
-  for (const po of t.notLogged) out.push(`  NOT IN THE LEDGER: ${po}. Forward its confirmation to log it, or note "sample" on it in the sheet.`);
+
   for (const e of t.errors) out.push(`  CHECK: ${e}`);
   out.push(`  Sheet: ${t.sheetUrl}`);
   return out;
@@ -137,12 +138,13 @@ function temuHtml(t, box, h, C) {
   const li = (color, s) => `<div style="font-size:14px;margin:6px 0;${color ? `color:${color}` : ''}">${s}</div>`;
   if (t.error) return box(h('Temu shipments') + li(C.bad, `✗ Sync failed: ${esc(t.error)}. The 3PL sheet was not updated today.`), C.bad);
   const parts = [li(null, `<b>${t.packages}</b> packages · <b style="color:${C.good}">${t.delivered}</b> delivered · <b>${t.inTransit.length}</b> on the way${t.notShipped.length ? ` · ${t.notShipped.length} not shipped yet` : ''}`)];
+  for (const d of t.loggedSince || []) parts.push(li(C.good, `✓ Logged from Gmail: ${esc(d)}`));
+  for (const d of t.logFailed || []) parts.push(li(C.bad, `✗ Couldn't log ${esc(d)}. Reply with the SKU, quantity and total.`));
   for (const p of t.newlyDelivered) parts.push(li(C.good, `✓ Delivered: ${p.units} × ${esc(p.item)} <span style="color:${C.mute}">${p.carrier} ${p.tracking}</span>`));
   for (const p of t.inTransit) parts.push(li(null, `→ ${p.units} × ${esc(p.item)} · ${esc(p.status)} <span style="color:${C.mute}">${p.carrier} ${p.tracking}</span>`));
-  for (const po of t.notLogged) parts.push(li(C.bad, `✗ ${po} isn't in the Ledger. Forward its confirmation to log it, or note "sample" on it in the sheet.`));
   for (const e of t.errors) parts.push(li(C.bad, `Check: ${esc(e)}`));
   parts.push(`<div style="margin-top:10px"><a href="${t.sheetUrl}" style="color:${C.terra};font-weight:700">Open the 3PL sheet</a></div>`);
-  return box(h('Temu shipments') + parts.join(''), t.errors.length || t.notLogged.length ? C.bad : C.line);
+  return box(h('Temu shipments') + parts.join(''), t.errors.length || t.logFailed?.length ? C.bad : C.line);
 }
 
 function report({ L, cfg, f, temu }) {
@@ -181,7 +183,7 @@ function report({ L, cfg, f, temu }) {
     lines.push(...temuLines(temu));
     lines.push('');
     if (temu.error || temu.errors?.length) headline.push('Temu sync problem');
-    else if (temu.notLogged?.length) headline.push(`${temu.notLogged.length} Temu order${temu.notLogged.length > 1 ? 's' : ''} not in the Ledger`);
+    else if (temu.logFailed?.length) headline.push(`${temu.logFailed.length} Temu order${temu.logFailed.length > 1 ? 's' : ''} not logged`);
   }
 
   lines.push('BOXES BY MONTH (expected, still to bill)');
@@ -289,9 +291,12 @@ async function runInventory({ send = true, force = false } = {}) {
     await seedLedger();
     const today = ctToday();
     if (send && !force && state.lastSentDate === today) return { skipped: `already sent ${tag(state.reports[state.reports.length - 1]?.id)} today` };
+    // The daily email first refreshes the Temu → 3PL sheet and logs new Temu orders (so the
+    // forecast counts them). A failure is reported in the email, never silent.
+    const temu = send ? await runTemuSync({ notify: false }).catch((e) => ({ error: e.message })) : null;
+    load();
     const g = await gather();
-    // The daily email also refreshes the Temu → 3PL sheet. A failure is reported in the email, never silent.
-    if (send) g.temu = await syncTemu({ ledgerInventory: g.L.inventory }).catch((e) => ({ error: e.message }));
+    if (temu) g.temu = { ...temu, loggedSince: state.temuLogged || [] };
     const r = report(g);
     const out = {
       at: new Date().toISOString(), subject: r.subject, text: r.text, html: reportHtml(g), temu: g.temu ? { ...g.temu, rows: undefined } : undefined, items: g.f.items, gaps: g.f.gaps, rate: g.f.rate, measured: g.f.measured,
@@ -303,6 +308,7 @@ async function runInventory({ send = true, force = false } = {}) {
       const id = state.nextId++;
       await sendOwner(`[${tag(id)}] ${r.subject}`, r.text, reportHtml(g));
       state.lastSentDate = today;
+      if (temu) state.temuLogged = [];
       state.reports.push({ id, at: out.at, subject: r.subject, items: g.f.items.map(({ sku, remaining, stockout, orderNow, totalDemand }) => ({ sku, remaining, stockout, orderNow, totalDemand })) });
       state.reports = state.reports.slice(-90);
       save();
@@ -310,6 +316,100 @@ async function runInventory({ send = true, force = false } = {}) {
     }
     return (lastRun = out);
   } finally { running = false; }
+}
+
+// ─── Temu orders straight from alan2by4@gmail (no forwarding) ────────────────
+// Hourly + before the 7:30 email: refresh the 3PL sheet (temu.js), then log any Temu
+// order that isn't in the Ledger yet. Claude maps the line items (already read from
+// the order images) to Ledger SKUs, following how earlier Temu rows were logged.
+const TEMU_LOG_TOOL = {
+  name: 'temu_ledger_rows',
+  description: 'Ledger Inventory rows for one Temu order.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      rows: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            sku: { type: 'string', description: 'Existing SKU from the Items list when it matches, else a new short UPPERCASE SKU' },
+            item_name: { type: 'string', description: 'Only for a NEW sku' },
+            qty: { type: 'number', description: 'Units in stock terms (e.g. a 2-pack of mats = 2 mats, as earlier rows did)' },
+            total_cost: { type: 'number', description: "This row's share of the Order total (after coupons, with tax). Rows must add up to the Order total" },
+            notes: { type: 'string', description: 'Like the earlier Temu rows: "Temu PO-…: qty x name, unit price, item total, coupons, tax = order total"' },
+          },
+          required: ['sku', 'qty', 'total_cost', 'notes'],
+        },
+      },
+      question: { type: 'string', description: 'If the order is ambiguous (which SKU, pack size), ask instead of guessing. Empty when clear.' },
+    },
+    required: ['rows'],
+  },
+};
+
+async function logTemuOrder(L, po, o, today) {
+  const examples = L.inventory.filter((r) => /PO-\d{3}-/.test(r.notes)).slice(-8).map((r) => `${r.sku} · ${r.qty} · ${r.notes}`).join('\n');
+  const out = await callTool({
+    system: [
+      'You keep the Happy Bakers inventory Ledger. Alan bought stock on Temu; turn the order into Ledger Inventory rows.',
+      'Use an existing SKU when the item matches (every digital kitchen/food scale is SCALE). Only record what the order shows; never invent a number. One row per SKU.',
+      'total_cost = the share of the Order total (what was actually paid: after coupons and bonuses, with tax), split across rows by their item prices.',
+    ].join('\n'),
+    tool: TEMU_LOG_TOOL,
+    prompt: [
+      `ITEMS (sku · name)\n${Object.values(L.items).map((i) => `${i.sku} · ${i.name}`).join('\n')}`,
+      `EARLIER TEMU ROWS (sku · qty · notes)\n${examples || '(none)'}`,
+      `ORDER ${po}, placed ${o.ordered}\n${o.items.map((i) => `${i.qty} × ${i.name} | ${i.variant || ''} | ${i.seller || ''} | $${i.unit_price ?? '?'} each`).join('\n')}\nItem(s) total: $${o.itemTotal ?? '?'} · Subtotal: $${o.subtotal ?? '?'} · Order total: $${o.orderTotal ?? '?'}`,
+    ].join('\n\n'),
+  });
+  if (out.question) throw new Error(`question: ${out.question}`);
+  const rows = out.rows || [];
+  const paid = rows.reduce((s, r) => s + (Number(r.total_cost) || 0), 0);
+  if (!rows.length) throw new Error('no rows');
+  if (o.orderTotal != null && Math.abs(paid - o.orderTotal) > 0.05) throw new Error(`rows add to ${money(paid)}, the order total is ${money(o.orderTotal)}`);
+  const done = [];
+  for (const r of rows) {
+    const res = await logPurchase(L, { ...r, date: o.ordered, notes: r.notes.includes(po) ? r.notes : `${po}: ${r.notes}` }, { today, poHint: po, source: 'alan2by4 Gmail' });
+    done.push(res.done || `Skipped: ${res.skipped}`);
+  }
+  return done;
+}
+
+async function runTemuSync({ notify = true } = {}) {
+  load();
+  state.temuFailed = state.temuFailed || {};
+  state.temuLogged = state.temuLogged || [];
+  const L = await ledger.read();
+  let t = await syncTemu({ ledgerInventory: L.inventory });
+  const logged = [], failed = [];
+  for (const po of t.notLogged) {
+    const o = t.orders[po];
+    if (!o?.items?.length) continue;
+    try { logged.push(...(await logTemuOrder(L, po, o, ctToday()))); delete state.temuFailed[po]; }
+    catch (e) { if (!state.temuFailed[po]) failed.push(`${po}: ${e.message}`); state.temuFailed[po] = e.message; }
+  }
+  // Refresh the sheet's In Ledger column (no new mail, so no model calls).
+  if (logged.length) t = await syncTemu({ ledgerInventory: L.inventory });
+  state.temuLogged.push(...logged);
+  save();
+  t.loggedNow = logged;
+  t.logFailed = Object.entries(state.temuFailed).map(([po, m]) => `${po}: ${m}`);
+  if (notify && (logged.length || failed.length)) {
+    const g = await gather();
+    g.temu = t;
+    const intro = [
+      `<div style="font-size:15px;line-height:1.5">New Temu order${logged.length > 1 ? 's' : ''} in alan2by4@gmail.com.</div>`,
+      ...logged.map((d) => `<div style="color:${C.good};font-size:14px;margin-top:8px">✓ ${esc(d)}</div>`),
+      ...failed.map((d) => `<div style="color:${C.bad};font-size:14px;margin-top:8px">✗ Couldn't log ${esc(d)}. Reply with the SKU, quantity and total to log it.</div>`),
+    ].join('');
+    const id = state.nextId++;
+    save();
+    await sendOwner(`[${tag(id)}] ${logged.length ? `Logged from Temu: ${logged.length} row${logged.length > 1 ? 's' : ''}` : 'Problem: Temu order not logged'}`, [...logged, ...failed.map((f) => `FAILED: ${f}`)].join('\n'), reportHtml(g, intro));
+    state.temuLogged = [];
+    save();
+  }
+  return t;
 }
 
 // ─── Alan's replies ──────────────────────────────────────────────────────────
@@ -349,6 +449,25 @@ const ACTION_TOOL = {
 
 const poNumbers = (s) => [...new Set(String(s || '').match(/PO-\d{3}-\d{10,}/g) || [])];
 
+// One Ledger Inventory row + the item's blended unit_cost. A PO already in an
+// Inventory row's notes for that SKU is skipped, so the same order never counts twice.
+async function logPurchase(L, a, { today, poHint = '', source }) {
+  const sku = String(a.sku || '').toUpperCase();
+  if (!sku || !(a.qty > 0) || (a.total_cost == null && a.unit_cost == null)) throw new Error('purchase is missing the SKU, quantity or cost');
+  const po = poNumbers(`${a.notes} ${poHint}`)[0];
+  const dupe = po && L.inventory.find((r) => r.sku === sku && String(r.notes || '').includes(po));
+  if (dupe) return { skipped: `${po} is already in the Ledger (${dupe.qty} × ${sku}, ${dupe.date}). Nothing added.` };
+  if (!L.items[sku]) { await ledger.addItem({ sku, name: a.item_name || sku, notes: 'Added by the inventory agent' }); L.items[sku] = { sku, name: a.item_name || sku }; }
+  const unit = a.total_cost != null ? a.total_cost / a.qty : a.unit_cost;
+  await ledger.addPurchase({ date: a.date || today, sku, qty: a.qty, unitCost: Number(unit.toFixed(4)), paidBy: a.paid_by || 'Alan', location: 'Shipsem', notes: `${a.notes || ''}${a.total_cost != null ? ` (${money(a.total_cost)} total)` : ''} [logged by inventory agent from ${source}]`.trim() });
+  const fresh = await ledger.read();
+  L.inventory = fresh.inventory;
+  const rows = fresh.inventory.filter((r) => r.sku === sku);
+  const qty = rows.reduce((s, r) => s + r.qty, 0), spent = rows.reduce((s, r) => s + r.qty * (r.unitCost || 0), 0);
+  if (fresh.items[sku] && qty) await ledger.setItemCost(fresh.items[sku].row, Number((spent / qty).toFixed(2)));
+  return { done: `Logged ${a.qty} × ${sku} at ${money(unit)} each${a.total_cost != null ? ` (${money(a.total_cost)})` : ''}. ${sku} average is now ${money(spent / qty)} over ${fmt(qty)} units.` };
+}
+
 function isInventoryMail(msg) {
   return /HB-INV/i.test(`${msg.subject} ${msg.text}`) || /\btemu\b/i.test(msg.subject || '');
 }
@@ -383,20 +502,8 @@ async function handleOwner(msg) {
   for (const a of out.actions || []) {
     try {
       if (a.type === 'log_purchase') {
-        const sku = String(a.sku || '').toUpperCase();
-        if (!sku || !(a.qty > 0) || (a.total_cost == null && a.unit_cost == null)) throw new Error('purchase is missing the SKU, quantity or cost');
-        // The same order forwarded twice must not count twice.
-        const po = poNumbers(`${a.notes} ${msg.subject}`)[0];
-        const dupe = po && L.inventory.find((r) => r.sku === sku && String(r.notes || '').includes(po));
-        if (dupe) { skipped.push(`${po} is already in the Ledger (${dupe.qty} × ${sku}, ${dupe.date}). Nothing added.`); continue; }
-        if (!L.items[sku]) { await ledger.addItem({ sku, name: a.item_name || sku, notes: 'Added by the inventory agent' }); L.items[sku] = { sku, name: a.item_name || sku }; }
-        const unit = a.total_cost != null ? a.total_cost / a.qty : a.unit_cost;
-        await ledger.addPurchase({ date: a.date || today, sku, qty: a.qty, unitCost: Number(unit.toFixed(4)), paidBy: a.paid_by || 'Alan', location: 'Shipsem', notes: `${a.notes || ''}${a.total_cost != null ? ` (${money(a.total_cost)} total)` : ''} [logged by inventory agent from Alan's email]`.trim() });
-        const fresh = await ledger.read();
-        const rows = fresh.inventory.filter((r) => r.sku === sku);
-        const qty = rows.reduce((s, r) => s + r.qty, 0), spent = rows.reduce((s, r) => s + r.qty * (r.unitCost || 0), 0);
-        if (fresh.items[sku] && qty) await ledger.setItemCost(fresh.items[sku].row, Number((spent / qty).toFixed(2)));
-        done.push(`Logged ${a.qty} × ${sku} at ${money(unit)} each${a.total_cost != null ? ` (${money(a.total_cost)})` : ''}. ${sku} average is now ${money(spent / qty)} over ${fmt(qty)} units.`);
+        const r = await logPurchase(L, a, { today, poHint: msg.subject, source: "Alan's email" });
+        (r.skipped ? skipped : done).push(r.skipped || r.done);
       } else if (a.type === 'set_month') {
         const sku = a.sku ? String(a.sku).toUpperCase() : null;
         const month = ledger.monthKey(a.month);
@@ -447,4 +554,4 @@ function inventoryStatus() {
   return { lastSentDate: state.lastSentDate || null, lastRun, reports: state.reports.slice(-14), log: state.log.slice(-20) };
 }
 
-module.exports = { runInventory, handleOwner, inventoryStatus, _emailImages: emailImages, _report: report, _reportHtml: reportHtml, _gather: gather };
+module.exports = { runInventory, runTemuSync, handleOwner, inventoryStatus, _logTemuOrder: logTemuOrder, _emailImages: emailImages, _report: report, _reportHtml: reportHtml, _gather: gather };
