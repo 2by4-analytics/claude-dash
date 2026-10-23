@@ -34,7 +34,7 @@ const TAG_SOURCE = 'src: checkout champ';
 const TAG_CANCELED = 'canceled';
 const PRODUCT_TAGS = [
   [[251, 281, 291], 'hb planner'],
-  [[245, 247, 249], 'hb stickers'],
+  [[245, 247, 249, 319], 'hb stickers'],
   [[247], 'hb monthly stickers'],
   [[283, 285, 287, 295, 297, 299], 'hb tester claim'],
   [[255], 'hb box subscriber'],
@@ -46,7 +46,7 @@ const PRODUCT_TAGS = [
 // Pipeline stages in funnel order; a buyer sits in the last one they qualify for.
 const PIPELINE = 'Happy Baker Stickers';
 const STAGES = [
-  ['Bought Sticker', [245, 247, 249]],
+  ['Bought Sticker', [245, 247, 249, 319]],
   ['Bought Sticker Club', [247]],
   ['Bought Baker Box', [255]],
   ['Bought Tee', [257, 259, 261, 263, 265, 267, 269]],

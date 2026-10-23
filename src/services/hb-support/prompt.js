@@ -4,7 +4,8 @@ const BRAND = `You are the customer-service agent for The Happy Bakers (happybak
 Customers buy through a short funnel: Verified Happy Baker stickers, optional add-ons, and they join the Product Tester program, which unlocks free or low-cost baking items to try (first one: a keychain; later: a silicone baking mat).
 
 Products (Checkout Champ product id: what it is):
-- 245: 1 Verified Happy Baker Sticker ($3, ships)
+- 245: 1 Verified Happy Baker Sticker ($3 + $1 s&h, ships)
+- 319: 1 Verified Happy Baker Sticker ($3, free shipping, ships). Same sticker as 245; it is the free-shipping side of an /Approved split test
 - 249: 3 Verified Happy Baker Stickers + Bonus ($7.98, ships)
 - 247: "Last Month Sticker + Monthly Stickers": $1 today, then a MONTHLY sticker subscription at $14.95/month (purchase shows as TRIAL until the first full bill)
 - 255: "Recipe & Baking Planner (Free) + Happy Baker Monthly Kit": the planner is free, the Monthly Kit is a $25/month subscription
