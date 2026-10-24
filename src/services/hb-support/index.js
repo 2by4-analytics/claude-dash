@@ -376,11 +376,15 @@ async function runHbSupport() {
         const ownerMsgs = msgs.filter((x) => x.from === OWNER());
         const custMsgs = msgs.filter((x) => x.from !== OWNER() && !OUR_ADDRESSES.test(x.from) && !AUTOMATED_SENDERS.test(x.from));
         msgs.filter((x) => AUTOMATED_SENDERS.test(x.from)).forEach((x) => console.log('[hb-support] ignored automated sender', x.from, x.subject || ''));
-        for (const om of ownerMsgs) { if (!(await inventory.handleOwner(om)) && !(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); summary.owner++; }
+        // Each handled message is marked seen right away: if a later one in the same
+        // conversation throws, a retry must not redo (and re-email) the earlier ones.
+        // All owner answers share ONE conversation (Debora got her reply twice, 10-24).
+        for (const om of ownerMsgs) { if (!(await inventory.handleOwner(om)) && !(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); seen.add(om.id); summary.owner++; }
         const email = custMsgs.filter((x) => x.type === 'TYPE_EMAIL' && x.from);
         const other = custMsgs.filter((x) => x.type !== 'TYPE_EMAIL');
         if (email.length) {
           if (!(await address.handleReply(email, addressHelpers(conv)))) await handleCustomer(conv, email, { dryRun: false });
+          email.forEach((x) => seen.add(x.id));
           summary.customer++;
         }
         if (other.length) {
@@ -398,10 +402,11 @@ async function runHbSupport() {
         // Alan's six answers into "I couldn't handle" cases (#53-58) instead of waiting.
         const status = e.response && e.response.status;
         if (status === 429 || status >= 500 || (!e.response && /timeout|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(`${e.code} ${e.message}`))) {
-          holdBack = Math.min(holdBack, ...(msgs.length ? msgs.map((x) => new Date(x.at).getTime()) : [state.watermark]));
+          if (!msgs.length) holdBack = Math.min(holdBack, state.watermark); // the fetch itself failed
+          for (const x of msgs) if (!seen.has(x.id)) holdBack = Math.min(holdBack, new Date(x.at).getTime());
           continue;
         }
-        for (const x of msgs) {
+        for (const x of msgs.filter((m) => !seen.has(m.id))) {
           state.failures[x.id] = (state.failures[x.id] || 0) + 1;
           if (state.failures[x.id] >= 3) {
             seen.add(x.id); delete state.failures[x.id];
