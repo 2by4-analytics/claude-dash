@@ -69,8 +69,25 @@ async function sendEmail({ contactId, conversationId, to, fromName, subject, tex
     emailFrom: `${fromName} <hello@happybakerhq.com>`,
     ...(conversationId ? { conversationId } : {}), ...(replyMessageId ? { replyMessageId } : {}),
   };
-  const r = await http('2021-04-15').post('/conversations/messages', body);
+  let r;
+  try { r = await http('2021-04-15').post('/conversations/messages', body); }
+  catch (e) {
+    // GHL only sends to the contact's own addresses. A customer writing from an address
+    // that isn't on their contact (Deziray 10-24: contact had a typo'd email) would fail
+    // every run, so add the address they wrote from and retry once.
+    if (!(e.response && e.response.data && e.response.data.canonicalCode === 'CONVERSATIONS_MSG_INVALID_EMAILTO' && contactId && to)) throw e;
+    await addContactEmail(contactId, to);
+    r = await http('2021-04-15').post('/conversations/messages', body);
+  }
   return r.data.messageId || r.data.emailMessageId;
+}
+
+async function addContactEmail(contactId, email) {
+  const c = (await http().get(`/contacts/${contactId}`)).data.contact || {};
+  const extra = (c.additionalEmails || []).map((x) => (typeof x === 'string' ? x : x.email)).filter(Boolean);
+  if ([c.email, ...extra].some((x) => String(x).toLowerCase() === email.toLowerCase())) return;
+  await http().put(`/contacts/${contactId}`, { additionalEmails: [...extra, email].map((x) => ({ email: x })) });
+  console.log('[hb-support] added', email.replace(/^(.).*@/, '$1***@'), 'to contact', contactId);
 }
 
 async function contactIdFor(email, firstName = 'Alan', lastName = '') {
