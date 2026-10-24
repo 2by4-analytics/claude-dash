@@ -21,8 +21,13 @@
 // happybaker-site-api user (HB_COC_LOGIN_ID / HB_COC_PASSWORD) and writes with a
 // location PIT (HB_GHL_PIT / HB_GHL_LOCATION_ID). Upserts and tag adds are
 // idempotent, so overlapping windows are harmless. Test orders are skipped.
+//
+// Each person's pushed state is fingerprinted on the volume and unchanged people
+// are skipped: re-pushing ~4,700 people every run (~9k calls, ~30 min) spent the
+// location's 200k/day GHL quota and 429'd the support agent for hours (10-23).
 
 const axios = require('axios');
+const store = require('./hb-support/store');
 
 const COC = 'https://api.checkoutchamp.com/order/query/';
 const GHL = 'https://services.leadconnectorhq.com';
@@ -180,8 +185,13 @@ async function pushPerson({ http, locationId }, p) {
   return { id, tags };
 }
 
+// Everything pushPerson / syncOpportunity act on; a change in any of it re-pushes.
+const fingerprint = (p) => JSON.stringify([p.firstName || '', p.lastName || '', String(p.phone || ''), String(p.postalCode || ''), p.state || '', !!p.buyer, !!p.canceled, [...p.products].sort()]);
+const PUSHED = 'ghl-sync-pushed';
+const PUSHED_TTL = 30 * 864e5;
+
 let running = false;
-async function runHbGhlSync({ days = 3, dryRun = false, buyersOnly = false } = {}) {
+async function runHbGhlSync({ days = 3, dryRun = false, buyersOnly = false, force = false } = {}) {
   if (running) return { skipped: 'already running' };
   running = true;
   const started = Date.now();
@@ -206,18 +216,26 @@ async function runHbGhlSync({ days = 3, dryRun = false, buyersOnly = false } = {
     summary.opportunities = { created: 0, moved: 0, lost: 0 };
     // buyersOnly skips partials (a backfill re-push of thousands of partials is what made it run >1h);
     // 2 workers; 429s are retried in ghl().
-    const queue = buyersOnly ? list.filter((p) => p.buyer || p.canceled) : [...list];
+    const pushed = store.load(PUSHED, {});
+    const queue = (buyersOnly ? list.filter((p) => p.buyer || p.canceled) : list)
+      .filter((p) => force || (pushed[p.email] && pushed[p.email].fp) !== fingerprint(p));
+    summary.unchanged = list.length - queue.length;
+    let unsaved = 0;
     const worker = async () => {
       for (let p; (p = queue.shift());) {
         try {
           const { id } = await pushPerson(g, p); summary.pushed++;
           if (pipe && (p.buyer || p.canceled)) { const r = await syncOpportunity(g, pipe, id, p); if (r) summary.opportunities[r]++; }
+          pushed[p.email] = { fp: fingerprint(p), at: Date.now() };
+          if (++unsaved >= 250) { store.save(PUSHED, pushed); unsaved = 0; }
         }
         catch (e) { summary.errors.push(`${p.email.replace(/^(.).*@/, '$1***@')}: ${e.response ? e.response.status + ' ' + JSON.stringify(e.response.data).slice(0, 160) : e.message}`); }
         await new Promise((r) => setTimeout(r, 150));
       }
     };
     await Promise.all(Array.from({ length: 2 }, worker));
+    for (const [email, v] of Object.entries(pushed)) if (Date.now() - v.at > PUSHED_TTL) delete pushed[email];
+    store.save(PUSHED, pushed);
     summary.ms = Date.now() - started;
     console.log('[hb-ghl] sync', JSON.stringify({ ...summary, errors: summary.errors.length }));
     if (summary.errors.length) console.error('[hb-ghl] errors', summary.errors.slice(0, 5).join(' | '));

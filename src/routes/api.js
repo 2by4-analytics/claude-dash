@@ -335,7 +335,7 @@ router.get('/debug/coc-campaign/:clientId', async (req, res) => {
 const { runHbGhlSync, hbGhlLastRun } = require('../services/hb-ghl-sync');
 router.post('/hb/ghl-sync', async (req, res) => {
   const days = Math.min(Math.max(Number(req.query.days) || 3, 1), 120);
-  try { res.json(await runHbGhlSync({ days, dryRun: req.query.dry === '1', buyersOnly: req.query.buyersOnly === '1' })); }
+  try { res.json(await runHbGhlSync({ days, dryRun: req.query.dry === '1', buyersOnly: req.query.buyersOnly === '1', force: req.query.force === '1' })); }
   catch (e) { res.status(502).json({ error: e.message }); }
 });
 router.get('/hb/ghl-sync/status', (req, res) => res.json({ lastRun: hbGhlLastRun(), configured: !!process.env.HB_GHL_PIT }));
