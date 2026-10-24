@@ -357,6 +357,11 @@ router.post('/hb/support/try', async (req, res) => {
   try { res.json(await hbSupport.tryConversation(String(req.query.conversationId || req.body.conversationId || ''))); }
   catch (e) { res.status(502).json({ error: e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 300)}` : e.message }); }
 });
+// Close cases with no emails: ?ids=53,54
+router.post('/hb/support/close', (req, res) => {
+  try { res.json(hbSupport.closeCases(String(req.query.ids || req.body.ids || '').split(',').map(Number).filter(Boolean))); }
+  catch (e) { res.status(409).json({ error: e.message }); }
+});
 router.post('/hb/support/mode', (req, res) => {
   try { res.json({ mode: hbSupport.setMode(String(req.query.mode || req.body.mode || '')) }); }
   catch (e) { res.status(400).json({ error: e.message }); }

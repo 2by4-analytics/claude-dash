@@ -365,6 +365,7 @@ async function runHbSupport() {
     if (mode() === 'off') return (lastRun = { ...summary, mode: 'off' });
     const since = state.watermark - 10 * 60 * 1000;
     const seen = new Set(state.seen);
+    let holdBack = Infinity; // oldest message an outage made us skip; the watermark waits for it
     const convs = await ghl.recentConversations(since);
     summary.conversations = convs.length;
     for (const conv of convs) {
@@ -392,7 +393,14 @@ async function runHbSupport() {
         const detail = e.response ? `${e.response.status} ${JSON.stringify(e.response.data).slice(0, 200)}` : e.message;
         console.error('[hb-support] conversation', conv.id, detail);
         summary.errors.push(`${conv.id}: ${detail}`);
-        // Retry on the next run; after 3 tries, hand it to Alan and move on.
+        // Retry on the next run; after 3 tries, hand it to Alan and move on. Outages
+        // (CoC/GHL 5xx, 429, timeouts) don't count: on 10-24 a 90-min CoC outage burned
+        // Alan's six answers into "I couldn't handle" cases (#53-58) instead of waiting.
+        const status = e.response && e.response.status;
+        if (status === 429 || status >= 500 || (!e.response && /timeout|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(`${e.code} ${e.message}`))) {
+          holdBack = Math.min(holdBack, ...(msgs.length ? msgs.map((x) => new Date(x.at).getTime()) : [state.watermark]));
+          continue;
+        }
         for (const x of msgs) {
           state.failures[x.id] = (state.failures[x.id] || 0) + 1;
           if (state.failures[x.id] >= 3) {
@@ -406,7 +414,7 @@ async function runHbSupport() {
         saveAll();
       }
     }
-    state.watermark = startedAt;
+    state.watermark = Math.min(startedAt, holdBack);
     state.seen = [...seen].slice(-3000);
     saveAll();
     if (process.env.SHIPSTATION_API_KEY) {
@@ -439,6 +447,22 @@ function supportStatus() {
   return { mode: mode(), dir: store.DIR, watermark: state && new Date(state.watermark).toISOString(), lastRun, cases: list, lessons };
 }
 
+// Close cases by hand with no emails (cleanup of error cases; the email route sends
+// Alan a "Done" per case). Refused mid-run so the run's saveAll can't overwrite it.
+function closeCases(ids) {
+  if (running) throw new Error('agent is mid-run, try again in a minute');
+  loadAll();
+  const closed = [], skipped = [];
+  for (const id of ids) {
+    const c = cases[id];
+    if (!c || c.status === 'done') { skipped.push(id); continue; }
+    c.status = 'done'; c.closedAt = new Date().toISOString(); c.closedBy = 'api';
+    closed.push(id);
+  }
+  saveAll();
+  return { closed, skipped };
+}
+
 function setMode(next) {
   if (!['auto', 'approve', 'off'].includes(next)) throw new Error('mode must be auto, approve or off');
   loadAll();
@@ -448,4 +472,4 @@ function setMode(next) {
   return mode();
 }
 
-module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, setMode, _planFor: planFor, _describeAccount: describeAccount };
+module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, closeCases, setMode, _planFor: planFor, _describeAccount: describeAccount };

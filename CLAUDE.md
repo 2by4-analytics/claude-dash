@@ -109,6 +109,7 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `GET /api/hb/support/status` | HB support agent: mode, last run, latest 50 cases, learned lessons |
 | `POST /api/hb/support/run` | Run the support agent now (same as the 5-min cron) |
 | `POST /api/hb/support/try?conversationId=` | Dry run on one GHL conversation's newest customer email: decision + the email Alan would get. Sends/changes nothing |
+| `POST /api/hb/support/close?ids=53,54` | Close cases with NO emails (cleanup of agent-error cases; closing by email sends Alan a "Done" each). 409 if the agent is mid-run |
 | `POST /api/hb/support/mode?mode=approve\|auto\|off` | Switch the agent's mode (Alan can also email `agent: auto` etc.) |
 | `GET /api/hb/support/address` | Bad-address flow: mode, batches, every flagged ShipStation order + its status |
 | `GET /api/hb/support/address/preview` | Read-only: HB ShipStation orders flagged right now + whether they're past the grace period |
