@@ -48,13 +48,36 @@ const nextLessonId = () => lessons.reduce((max, l) => Math.max(max, l.id || 0), 
 function saveAll() { store.save('state', state); store.save('cases', cases); store.save('lessons', lessons); }
 const mode = () => (state && state.mode) || process.env.HB_SUPPORT_MODE || 'approve';
 
+// Customers often write from one address and ordered with another (Lorretta 10-24:
+// wrote from fuesting57@, ordered as lorretta57@, and the agent could only ask Alan).
+// Look up any other address they give in their messages and merge those orders in,
+// flagged, so Alan can see them. Orders from an address someone merely typed are never
+// auto-handled (anyone can name an email), see planFor.
+async function accountFor(email, texts) {
+  const snap = await coc.snapshot(email);
+  const others = [...new Set((texts.join('\n').match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).map((x) => x.toLowerCase()))]
+    .filter((x) => x !== email.toLowerCase() && x !== OWNER() && !OUR_ADDRESSES.test(x) && !AUTOMATED_SENDERS.test(x)).slice(0, 3);
+  snap.altEmails = [];
+  for (const alt of others) {
+    const s = await coc.snapshot(alt);
+    if (!s.orders.length) continue;
+    snap.altEmails.push(alt);
+    snap.orders.push(...s.orders.map((o) => ({ ...o, email: alt })));
+    snap.purchases.push(...s.purchases);
+    snap.customerIds.push(...s.customerIds.filter((id) => !snap.customerIds.includes(id)));
+    snap.name = snap.name || s.name;
+  }
+  return snap;
+}
+
 // ─── account formatting (for prompts and for Alan) ──────────────────────────
 function describeAccount(snap) {
   if (!snap.orders.length) return `No Checkout Champ orders for ${snap.email}.`;
   const lines = [];
+  if ((snap.altEmails || []).length) lines.push(`Orders marked (other email) are under ${snap.altEmails.join(', ')}, an address they gave in their message, not the one they wrote from. On the site they must sign in / create their account with that address.`);
   for (const o of snap.orders) {
     const ship = o.shipped ? 'SHIPPED' : `not shipped (${o.fulfillments.map((f) => f.status).join(', ') || 'digital/no fulfillment'})`;
-    lines.push(`Order ${o.orderId} · ${o.date} · ${o.type} · ${o.status} · ${money(o.total)} (refundable ${money(o.refundRemaining)}) · ${o.card || 'card ?'} · ${ship}`);
+    lines.push(`Order ${o.orderId}${o.email ? ` (other email ${o.email})` : ''} · ${o.date} · ${o.type} · ${o.status} · ${money(o.total)} (refundable ${money(o.refundRemaining)}) · ${o.card || 'card ?'} · ${ship}`);
     for (const i of o.items) lines.push(`  - [${i.productId}] ${i.name} ${money(i.price)}${i.shipping ? ` + ${money(i.shipping)} s&h` : ''}${i.purchaseId ? ` · subscription ${i.purchaseId} ${i.purchaseStatus}${i.nextBillDate ? ` next bill ${i.nextBillDate}` : ''}` : ''}`);
   }
   const subs = snap.purchases;
@@ -108,7 +131,7 @@ function planFor(decision, snap) {
 
   if (problems.length) action = 'escalate';
   const refundTotal = actions.filter((a) => a.type === 'refund_order').reduce((s, a) => s + orders.get(a.order_id).refundRemaining, 0);
-  const autoOk = action !== 'escalate' && Number(decision.confidence) >= 0.75 && refundTotal <= AUTO_REFUND_MAX();
+  const autoOk = action !== 'escalate' && Number(decision.confidence) >= 0.75 && refundTotal <= AUTO_REFUND_MAX() && !(snap.altEmails || []).length;
   return { action, actions: action === 'escalate' ? [] : actions, proposedActions: actions, problems, refundTotal, autoOk, stopEmails: !!decision.stop_emails };
 }
 
@@ -232,7 +255,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
     return { case: open.id, followUp: true };
   }
 
-  const snapshot = await coc.snapshot(last.from);
+  const snapshot = await accountFor(last.from, batch.map((b) => b.text));
   const c = {
     id: dryRun ? 0 : state.nextId++, status: 'new', createdAt: new Date().toISOString(),
     conversationId: conv.id, contactId: conv.contactId, email: last.from,
@@ -292,7 +315,7 @@ async function handleOwner(msg) {
   if (!c) return { ignored: `unknown case ${m[1]}` };
   c.ownerAnswers = [...(c.ownerAnswers || []), { at: msg.at, text }];
   c.ownerAnswer = text;
-  c.snapshot = await coc.snapshot(c.email);
+  c.snapshot = await accountFor(c.email, c.messages.map((x) => x.text));
 
   let out;
   if (PLAIN_YES.test(text) && c.plan.action !== 'escalate') {
