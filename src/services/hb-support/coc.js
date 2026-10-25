@@ -1,6 +1,7 @@
 // Checkout Champ reads + the few writes the support agent may make. Uses the
 // happybaker-site-api user (IP-whitelisted to Dash). Writes: full refund + cancel of
-// an order, partial refund, cancel a subscription (purchase), customer note.
+// an order, partial refund, cancel a subscription (purchase), change a tee's size,
+// customer note.
 const axios = require('axios');
 
 const BASE = 'https://api.checkoutchamp.com';
@@ -52,7 +53,7 @@ async function snapshot(email) {
     orders: orders.map((o) => {
       const fulfillments = list(o.fulfillments).map((f) => ({
         id: f.fulfillmentId, status: f.status, dateShipped: f.dateShipped, tracking: f.trackingNumber,
-        items: list(f.items).map((i) => i.name),
+        items: list(f.items).map((i) => ({ id: i.fulfillmentItemId, name: i.name, sku: i.sku, productId: Number(i.productId), purchaseId: i.purchaseId || null })),
       }));
       return {
         orderId: o.orderId, customerId: o.customerId, type: o.orderType, status: o.orderStatus, date: o.dateCreated,
@@ -64,7 +65,7 @@ async function snapshot(email) {
       };
     }),
     purchases: purchases.map((p) => ({
-      purchaseId: p.purchaseId, orderId: p.orderId, product: p.productName, status: p.status, price: Number(p.price || 0),
+      purchaseId: p.purchaseId, orderId: p.orderId, productId: Number(p.productId), product: p.productName, status: p.status, price: Number(p.price || 0),
       nextBillDate: p.nextBillDate, cycle: p.billingCycleNumber, totalBilled: Number(p.totalBilled || 0), live: LIVE_PURCHASE.test(String(p.status || '')),
     })),
   };
@@ -75,4 +76,32 @@ const partialRefund = (orderId, amount, reason) => write('order/refund', { order
 const cancelPurchase = (purchaseId, reason) => write('purchase/cancel', { purchaseId, cancelReason: reason.slice(0, 100), cancelFulfillment: 'true' });
 const addNote = (customerId, message) => write('customer/addnote', { customerId, message: message.slice(0, 500) });
 
-module.exports = { snapshot, refundOrder, partialRefund, cancelPurchase, addNote, SHIPPED, LIVE_PURCHASE };
+// Happy Baker Monthly Tee, one campaign product per size (same $18 → $26.95 + $5 cycles;
+// 2XL $27.95, 3XL/4XL $28.95 from the 2nd bill). The SKU is what the fulfillment ships.
+const TEE_SIZES = {
+  S: { campaignProductId: 257, sku: 'HB- Tshirt- Baking Is My Happy Place (S)' },
+  M: { campaignProductId: 259, sku: 'HB- Tshirt- Baking Is My Happy Place (M)' },
+  L: { campaignProductId: 261, sku: 'HB- Tshirt- Baking Is My Happy Place (L)' },
+  XL: { campaignProductId: 263, sku: 'HB- Tshirt- Baking Is My Happy Place (XL)' },
+  '2XL': { campaignProductId: 265, sku: 'HB- Tshirt- Baking Is My Happy Place (2XL)' },
+  '3XL': { campaignProductId: 267, sku: 'HB- Tshirt- Baking Is My Happy Place (3XL)' },
+  '4XL': { campaignProductId: 269, sku: 'HB- Tshirt- Baking Is My Happy Place (4XL)' },
+};
+const TEE_PRODUCT_IDS = new Set(Object.values(TEE_SIZES).map((t) => t.campaignProductId));
+
+// Switch a tee subscription to another size: future rebills bill + ship the new size, and
+// the tee still waiting in an unshipped fulfillment gets the new SKU. Re-reads the purchase
+// afterwards, so "done" means Checkout Champ actually shows the new product.
+async function changeTeeSize(purchaseId, size, unshippedItems = []) {
+  const t = TEE_SIZES[size];
+  if (!t) throw new Error(`unknown tee size ${size}`);
+  await write('purchase/update', { purchaseId, productId: t.campaignProductId });
+  for (const i of unshippedItems) {
+    await write('fulfillment/update', { fulfillmentId: i.fulfillmentId, fulfillmentItem1_Id: i.id, fulfillmentItem1_sku: t.sku });
+  }
+  const [p] = await query('purchase/query', { purchaseId });
+  if (!p || Number(p.productId) !== t.campaignProductId) throw new Error(`purchase ${purchaseId} still shows product ${p && p.productId} after the update`);
+  return `subscription now ${p.displayName || p.productName}${unshippedItems.length ? `; ${unshippedItems.length} unshipped tee set to ${t.sku}` : ''}`;
+}
+
+module.exports = { snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };

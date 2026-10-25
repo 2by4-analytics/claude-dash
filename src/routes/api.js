@@ -367,6 +367,12 @@ router.post('/hb/support/lesson', (req, res) => {
   try { res.json(hbSupport.editLesson(Number(req.query.id || req.body.id), String(req.body.text || ''))); }
   catch (e) { res.status(409).json({ error: e.message }); }
 });
+// Body { caseId, actions: [{ type: 'change_tee_size', purchase_id, size }, ...] } — same checks
+// as an owner answer; nothing is emailed.
+router.post('/hb/support/act', async (req, res) => {
+  try { res.json(await hbSupport.actOnCase(Number(req.body.caseId), req.body.actions || [])); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.post('/hb/support/mode', (req, res) => {
   try { res.json({ mode: hbSupport.setMode(String(req.query.mode || req.body.mode || '')) }); }
   catch (e) { res.status(400).json({ error: e.message }); }

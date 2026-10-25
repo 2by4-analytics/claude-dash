@@ -91,6 +91,7 @@ function describePlan(plan, snap) {
   const parts = plan.actions.map((a) => {
     if (a.type === 'refund_order') return `Full refund + cancel order ${a.order_id} (${money(byId.get(a.order_id)?.refundRemaining)})`;
     if (a.type === 'partial_refund') return `Refund ${money(a.amount)} on order ${a.order_id}`;
+    if (a.type === 'change_tee_size') return `Change tee to size ${a.size}: subscription ${a.purchase_id} + any unshipped tee`;
     return `Cancel subscription ${a.purchase_id}`;
   });
   if (plan.stopEmails) parts.push('Stop all emails to them (GHL email DND)');
@@ -116,6 +117,17 @@ function planFor(decision, snap) {
       else actions.push({ type: 'cancel_purchase', purchase_id: id });
     }
     if (!decision.purchase_ids.length) problems.push('no live subscription named to cancel');
+  } else if (action === 'change_tee_size') {
+    const size = decision.tee_size;
+    const ids = decision.purchase_ids.length ? decision.purchase_ids : snap.purchases.filter((p) => p.live && coc.TEE_PRODUCT_IDS.has(p.productId)).map((p) => p.purchaseId);
+    if (!coc.TEE_SIZES[size]) problems.push('no tee size named');
+    else if (!ids.length) problems.push('no tee subscription on this account');
+    for (const id of ids) {
+      const p = purchases.get(id);
+      if (!p) problems.push(`subscription ${id} is not on this customer's account`);
+      else if (!coc.TEE_PRODUCT_IDS.has(p.productId)) problems.push(`subscription ${id} is not a tee`);
+      else if (coc.TEE_SIZES[size]) actions.push({ type: 'change_tee_size', purchase_id: id, size });
+    }
   }
 
   if (problems.length) action = 'escalate';
@@ -140,6 +152,12 @@ function checkOwnerActions(list, snap) {
       const p = purchases.get(a.purchase_id);
       if (!p) problems.push(`subscription ${a.purchase_id} is not on this customer's account`);
       else if (p.live) ok.push(a);
+    } else if (a.type === 'change_tee_size') {
+      const p = purchases.get(a.purchase_id);
+      if (!p) problems.push(`subscription ${a.purchase_id} is not on this customer's account`);
+      else if (!coc.TEE_PRODUCT_IDS.has(p.productId)) problems.push(`subscription ${a.purchase_id} is not a tee`);
+      else if (!coc.TEE_SIZES[a.size]) problems.push(`unknown tee size ${a.size}`);
+      else ok.push(a);
     }
   }
   return { ok, problems };
@@ -150,12 +168,13 @@ async function execute(c, actions) {
   const reason = `Customer request (${tag(c.id)})`;
   const results = [];
   for (const a of actions) {
-    const key = `${a.type}:${a.order_id || a.purchase_id}:${a.amount || ''}`;
+    const key = `${a.type}:${a.order_id || a.purchase_id}:${a.amount || a.size || ''}`;
     if (c.executed.some((e) => e.key === key && e.ok)) continue;
     let ok = true, message;
     try {
       if (a.type === 'refund_order') message = await coc.refundOrder(a.order_id, reason);
       else if (a.type === 'partial_refund') message = await coc.partialRefund(a.order_id, a.amount, reason);
+      else if (a.type === 'change_tee_size') message = await coc.changeTeeSize(a.purchase_id, a.size, unshippedTees(c.snapshot, a.purchase_id, a.size));
       else message = await coc.cancelPurchase(a.purchase_id, reason);
     } catch (e) {
       message = e.message;
@@ -165,12 +184,52 @@ async function execute(c, actions) {
     const r = { key, ...a, ok, message, at: new Date().toISOString() };
     c.executed.push(r); results.push(r);
   }
-  const done = results.filter((r) => r.ok).map((r) => (r.type === 'cancel_purchase' ? `cancelled subscription ${r.purchase_id}` : `${r.type === 'partial_refund' ? `refunded ${money(r.amount)} on` : 'refunded + cancelled'} order ${r.order_id}`));
+  const done = results.filter((r) => r.ok).map((r) => (r.type === 'cancel_purchase' ? `cancelled subscription ${r.purchase_id}`
+    : r.type === 'change_tee_size' ? `tee size → ${r.size} (${r.message})`
+    : `${r.type === 'partial_refund' ? `refunded ${money(r.amount)} on` : 'refunded + cancelled'} order ${r.order_id}`));
   for (const customerId of (c.snapshot.customerIds || []).slice(0, 1)) {
     if (done.length) await coc.addNote(customerId, `HB support agent ${tag(c.id)}: ${done.join('; ')}.`).catch((e) => console.warn('[hb-support] note failed:', e.message));
   }
   return results;
 }
+
+// The tee items of this subscription still sitting in an unshipped fulfillment, minus any
+// already on the target size.
+function unshippedTees(snap, purchaseId, size) {
+  const sku = coc.TEE_SIZES[size] && coc.TEE_SIZES[size].sku;
+  const out = [];
+  for (const o of snap.orders) {
+    for (const f of o.fulfillments) {
+      if (coc.SHIPPED.test(String(f.status || '')) || f.tracking || f.dateShipped || /CANCEL/i.test(String(f.status || ''))) continue;
+      for (const i of f.items) {
+        if ((i.purchaseId === purchaseId || coc.TEE_PRODUCT_IDS.has(i.productId)) && i.sku !== sku) out.push({ fulfillmentId: f.id, id: i.id });
+      }
+    }
+  }
+  return out;
+}
+
+// A reply must not tell the customer something was done unless an action did it. HB-CS-68
+// (10-25): "I've updated your tee to a Medium" went out after Alan's "yes" with no action
+// behind it (the agent had none for sizes), so the size never changed. Each first-person
+// "I've …" sentence is checked against the action types that can back its verb.
+const CLAIMS = [
+  [/\b(updat|chang|switch|swapp|correct|fix|replac)ed\b/i, ['change_tee_size']],
+  [/\brefund(ed)?\b/i, ['refund_order', 'partial_refund']],
+  [/\bcancel+ed\b/i, ['cancel_purchase', 'refund_order']],
+];
+function unbackedClaims(reply, actions, snap) {
+  const types = new Set((actions || []).map((a) => a.type));
+  // "We have canceled all future shipments" is true when nothing live is left to cancel.
+  if (snap && !snap.purchases.some((p) => p.live)) types.add('cancel_purchase');
+  const out = [];
+  for (const sentence of String(reply || '').split(/(?<=[.!?])\s+|\n+/)) {
+    if (!/\b(I'?ve|I have|I just|we'?ve|we have)\b/i.test(sentence)) continue;
+    for (const [re, backers] of CLAIMS) if (re.test(sentence) && !backers.some((t) => types.has(t))) { out.push(sentence.trim()); break; }
+  }
+  return out;
+}
+const doneActions = (c) => (c.executed || []).filter((e) => e.ok);
 
 async function replyToCustomer(c, text) {
   const subject = /^re:/i.test(c.subject) ? c.subject : `Re: ${c.subject || 'Your Happy Bakers order'}`;
@@ -215,6 +274,10 @@ function proposalEmail(c) {
     `THEIR ACCOUNT\n${describeAccount(c.snapshot)}`,
     `WHAT I'D DO (${p.action === 'escalate' ? 'suggestion' : p.action})\n${describePlan({ ...p, actions: p.proposedActions }, c.snapshot)}`,
     `REPLY I'D SEND AS MAGGIE\n${d.reply || '(no reply)'}`,
+    ...(() => {
+      const claims = unbackedClaims(d.reply, p.proposedActions, c.snapshot);
+      return claims.length ? [`WARNING: this reply says "${claims.join(' / ')}", but none of my actions does that, so it would be false. Saying "yes" will not make that change. Make it by hand first, or tell me what to do.`] : [];
+    })(),
     ask,
     'Anything you tell me that applies beyond this customer becomes a rule for next time.',
     `GHL conversation: ${ghl.link(c.conversationId)}`,
@@ -263,6 +326,12 @@ async function handleCustomer(conv, batch, { dryRun }) {
     if (failed.length) {
       c.status = 'awaiting_owner';
       await emailOwner(c, `Problem: ${c.decision.summary}`, `I tried to handle this and Checkout Champ refused part of it:\n${failed.map((f) => `${f.type} ${f.order_id || f.purchase_id}: ${f.message}`).join('\n')}\n\nNo reply has gone to the customer yet. Tell me what to do.\n\n${proposalEmail(c)}`);
+      return c;
+    }
+    const claims = unbackedClaims(c.decision.reply, doneActions(c), c.snapshot);
+    if (claims.length) {
+      c.status = 'awaiting_owner';
+      await emailOwner(c, `Held: ${c.decision.summary}`, `I didn't send my reply: it says "${claims.join(' / ')}", but nothing I did makes that true.\n\n${proposalEmail(c)}`);
       return c;
     }
     await replyToCustomer(c, c.decision.reply);
@@ -325,18 +394,21 @@ async function handleOwner(msg) {
   const { ok, problems } = checkOwnerActions(out.actions, c.snapshot);
   const results = await execute(c, ok);
   const failed = results.filter((r) => !r.ok);
-  if (out.send_reply && out.reply && !failed.length) await replyToCustomer(c, out.reply);
+  const claims = out.send_reply && out.reply ? unbackedClaims(out.reply, doneActions(c), c.snapshot) : [];
+  const held = claims.length > 0;
+  if (out.send_reply && out.reply && !failed.length && !held) await replyToCustomer(c, out.reply);
   const stopped = out.stop_emails && !failed.length && await stopEmails(c);
   if (out.lesson) lessons.push({ id: nextLessonId(), at: new Date().toISOString(), text: out.lesson, caseId: c.id });
-  c.status = failed.length ? 'awaiting_owner' : 'done';
+  c.status = failed.length || held ? 'awaiting_owner' : 'done';
 
   const lines = [out.confirmation];
-  for (const r of results) lines.push(`${r.ok ? 'Done' : 'FAILED'}: ${r.type} ${r.order_id || r.purchase_id}${r.amount ? ` ${money(r.amount)}` : ''}${r.ok ? '' : ` (${r.message})`}`);
+  if (held) lines.push(`I did NOT send the reply: it says "${claims.join(' / ')}", but nothing I did makes that true. Make the change by hand and tell me to send it, or tell me what to do instead.`);
+  for (const r of results) lines.push(`${r.ok ? 'Done' : 'FAILED'}: ${r.type} ${r.order_id || r.purchase_id}${r.amount ? ` ${money(r.amount)}` : ''}${r.size ? ` → ${r.size}` : ''}${r.ok && r.type !== 'change_tee_size' ? '' : ` (${r.message})`}`);
   if (stopped) lines.push('Done: stopped all emails to them (GHL email DND)');
   if (problems.length) lines.push(`Skipped: ${problems.join('; ')}`);
-  lines.push(out.send_reply && !failed.length ? `Reply sent to ${c.email}:\n${out.reply}` : failed.length ? 'No reply sent because something failed. Tell me how to proceed.' : 'No reply sent.');
+  lines.push(out.send_reply && !failed.length && !held ? `Reply sent to ${c.email}:\n${out.reply}` : failed.length ? 'No reply sent because something failed. Tell me how to proceed.' : held ? `Held reply:\n${out.reply}` : 'No reply sent.');
   if (out.lesson) lines.push(`Saved as a rule for next time: ${out.lesson}`);
-  await emailOwner(c, `${failed.length ? 'Problem' : 'Done'}: ${c.decision.summary}`, lines.join('\n\n'));
+  await emailOwner(c, `${failed.length || held ? 'Problem' : 'Done'}: ${c.decision.summary}`, lines.join('\n\n'));
   return { case: c.id, status: c.status };
 }
 
@@ -457,6 +529,25 @@ async function runHbSupport() {
   } finally { running = false; }
 }
 
+// Staff fix from Claude Code: run owner-approved actions on a case through the same checks
+// and CoC calls, with no customer reply and no owner email. Holds the run lock so the
+// 5-min loop can't interleave.
+async function actOnCase(caseId, actions) {
+  if (running) throw new Error('agent run in progress, try again in a minute');
+  running = true;
+  try {
+    loadAll();
+    const c = cases[caseId];
+    if (!c) throw new Error(`unknown case ${caseId}`);
+    c.snapshot = await coc.snapshot(c.email);
+    const { ok, problems } = checkOwnerActions(actions, c.snapshot);
+    const results = await execute(c, ok);
+    if (ok.length && results.every((r) => r.ok) && !problems.length) c.status = 'done';
+    saveAll();
+    return { case: c.id, status: c.status, results, problems };
+  } finally { running = false; }
+}
+
 // Decide (no actions, no emails) for the newest customer email in one conversation.
 async function tryConversation(conversationId) {
   loadAll();
@@ -469,8 +560,11 @@ async function tryConversation(conversationId) {
   return { ...c, ownerEmailPreview: proposalEmail(c) };
 }
 
+// Never reload from disk mid-run: loadAll() swaps out the objects the running loop is
+// editing, and its final save then writes the stale copies back (case 68 lost its "done"
+// on 10-25 when a status call landed during the 22:15 run).
 function supportStatus() {
-  loadAll();
+  if (!running || !state) loadAll();
   const list = Object.values(cases || {}).sort((a, b) => b.id - a.id).slice(0, 50)
     .map((c) => ({ id: c.id, status: c.status, createdAt: c.createdAt, email: c.email, summary: c.decision?.summary, action: c.plan?.action, executed: (c.executed || []).map((e) => `${e.ok ? 'ok' : 'FAILED'} ${e.key}`), ownerAnswer: c.ownerAnswer || null }));
   return { mode: mode(), dir: store.DIR, watermark: state && new Date(state.watermark).toISOString(), lastRun, cases: list, lessons };
@@ -506,11 +600,11 @@ function editLesson(id, text) {
 
 function setMode(next) {
   if (!['auto', 'approve', 'off'].includes(next)) throw new Error('mode must be auto, approve or off');
-  loadAll();
+  if (!running || !state) loadAll();
   state = state || { watermark: Date.now(), seen: [], nextId: 1, failures: {} };
   state.mode = next;
   saveAll();
   return mode();
 }
 
-module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount };
+module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, actOnCase, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount, _unbackedClaims: unbackedClaims, _unshippedTees: unshippedTees };
