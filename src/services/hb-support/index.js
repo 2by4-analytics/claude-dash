@@ -202,7 +202,7 @@ function unshippedTees(snap, purchaseId, size) {
     for (const f of o.fulfillments) {
       if (coc.SHIPPED.test(String(f.status || '')) || f.tracking || f.dateShipped || /CANCEL/i.test(String(f.status || ''))) continue;
       for (const i of f.items) {
-        if ((i.purchaseId === purchaseId || coc.TEE_PRODUCT_IDS.has(i.productId)) && i.sku !== sku) out.push({ fulfillmentId: f.id, id: i.id });
+        if ((i.purchaseId === purchaseId || coc.TEE_PRODUCT_IDS.has(i.productId)) && i.sku !== sku) out.push({ fulfillmentId: f.id, id: i.id, status: String(f.status || '') });
       }
     }
   }

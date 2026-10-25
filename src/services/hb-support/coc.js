@@ -96,12 +96,17 @@ async function changeTeeSize(purchaseId, size, unshippedItems = []) {
   const t = TEE_SIZES[size];
   if (!t) throw new Error(`unknown tee size ${size}`);
   await write('purchase/update', { purchaseId, productId: t.campaignProductId });
+  // fulfillment/update requires a fulfillmentStatus and only accepts PENDING/SHIPPED/…/FREEZE,
+  // so a HOLD fulfillment can't keep its status: re-sending PENDING only where it already is.
+  const held = [];
   for (const i of unshippedItems) {
-    await write('fulfillment/update', { fulfillmentId: i.fulfillmentId, fulfillmentItem1_Id: i.id, fulfillmentItem1_sku: t.sku });
+    if (i.status === 'PENDING') await write('fulfillment/update', { fulfillmentId: i.fulfillmentId, fulfillmentStatus: 'PENDING', fulfillmentItem1_Id: i.id, fulfillmentItem1_sku: t.sku });
+    else held.push(`${i.fulfillmentId} (${i.status})`);
   }
   const [p] = await query('purchase/query', { purchaseId });
   if (!p || Number(p.productId) !== t.campaignProductId) throw new Error(`purchase ${purchaseId} still shows product ${p && p.productId} after the update`);
-  return `subscription now ${p.displayName || p.productName}${unshippedItems.length ? `; ${unshippedItems.length} unshipped tee set to ${t.sku}` : ''}`;
+  const fixed = unshippedItems.length - held.length;
+  return `subscription now ${p.displayName || p.productName}${fixed ? `; ${fixed} unshipped tee set to ${t.sku}` : ''}${held.length ? `; tee in fulfillment ${held.join(', ')} left as-is (CoC can't edit it without releasing the hold), so check the shipping order's size` : ''}`;
 }
 
 module.exports = { snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };
