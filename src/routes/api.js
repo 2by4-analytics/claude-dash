@@ -738,6 +738,7 @@ async function runCppSnapshot() {
     console.log('[CPP Snapshot] Complete');
   } catch (err) {
     console.error('[CPP Snapshot] Error:', err.message);
+    return { error: err.message };
   }
 }
 
@@ -1043,6 +1044,31 @@ router.post('/today/upload/commit', async (req, res) => {
     console.error('[today/upload/commit]', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Control panel (/control, services/control). The mini's heartbeat job POSTs here every 5 min.
+const control = require('../services/control');
+router.get('/control/status', async (req, res) => {
+  try { res.json(await control.status({ fresh: req.query.fresh === '1' })); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/control/heartbeat', (req, res) => {
+  try { res.json(control.heartbeat(req.body || {})); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Body { target, action, value }: only the controls listed on that registry entry.
+router.post('/control/action', async (req, res) => {
+  try { res.json(await control.action(req.body || {}, req.headers['x-dash-user'] || 'panel')); }
+  catch (e) { res.status(400).json({ error: e.response ? `HTTP ${e.response.status}` : e.message }); }
+});
+// Preview the morning email (nothing sent).
+router.get('/control/digest', async (req, res) => {
+  try { res.json(control.digest(await control.status({ fresh: true }))); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/control/digest', async (req, res) => {
+  try { res.json(await control.track('control-digest', () => control.sendDigest({ to: req.query.to }))); }
+  catch (e) { res.status(502).json({ error: e.message }); }
 });
 
 module.exports = router;

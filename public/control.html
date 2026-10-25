@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>2by4 Control</title>
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23f8fafc'/><rect x='10' y='10' width='44' height='44' rx='10' fill='none' stroke='%23f59e0b' stroke-width='5'/><rect x='22' y='22' width='20' height='20' rx='3' fill='%230f172a'/></svg>" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0f172a;
+    --slate: #334155;
+    --slate-2: #64748b;
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.12);
+    --gray: #f8fafc;
+    --line: rgba(15, 23, 42, 0.12);
+    --line-soft: rgba(15, 23, 42, 0.06);
+    --shadow-sm: 0 4px 18px rgba(15, 23, 42, 0.06);
+    --good: #15803d;
+    --good-soft: rgba(21, 128, 61, 0.10);
+    --warn: #b45309;
+    --warn-soft: rgba(245, 158, 11, 0.16);
+    --over: #b91c1c;
+    --over-soft: rgba(185, 28, 28, 0.08);
+    --muted: #94a3b8;
+    --muted-soft: rgba(100, 116, 139, 0.10);
+    --radius-md: 20px;
+    --radius-sm: 14px;
+    --shell: min(1120px, calc(100vw - 32px));
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--navy);
+    font-family: "Manrope", sans-serif; line-height: 1.45;
+    background: radial-gradient(1200px 600px at 10% -10%, rgba(245,158,11,0.08), transparent 60%), linear-gradient(180deg, #ffffff 0%, var(--gray) 100%);
+  }
+  a { color: inherit; }
+  .shell { width: var(--shell); margin: 0 auto; padding: 28px 0 64px; }
+
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
+  .mark { width: 40px; height: 40px; flex: none; }
+  h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .asof { color: var(--slate-2); font-size: 13px; }
+  .head-links { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none;
+    border: 1px solid var(--line); background: #fff; color: var(--navy);
+    padding: 7px 12px; border-radius: 999px; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--navy); }
+  .btn[disabled] { opacity: .5; cursor: wait; }
+  .btn.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .btn.danger { color: var(--over); border-color: rgba(185,28,28,.35); }
+  .btn.danger.on { background: var(--over); color: #fff; }
+
+  .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 22px; }
+  .pill { background: #fff; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 12px 14px; box-shadow: var(--shadow-sm); }
+  .pill b { display: block; font-size: 26px; font-weight: 800; line-height: 1.1; }
+  .pill span { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--slate-2); }
+  .pill.bad b { color: var(--over); } .pill.warn b { color: var(--warn); } .pill.ok b { color: var(--good); }
+  .pill.unknown b, .pill.off b { color: var(--slate-2); }
+
+  section { margin-bottom: 22px; }
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px 2px; }
+  .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--slate); }
+  .eyebrow-note { font-size: 12px; color: var(--slate-2); }
+  .card { background: #fff; border: 1px solid var(--line-soft); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden; }
+
+  .row { display: grid; grid-template-columns: 18px 290px 1fr auto; gap: 12px; align-items: center; padding: 11px 16px; border-top: 1px solid var(--line-soft); }
+  .row:first-child { border-top: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--good); box-shadow: 0 0 0 4px var(--good-soft); }
+  .dot.warn { background: var(--amber); box-shadow: 0 0 0 4px var(--warn-soft); }
+  .dot.bad { background: var(--over); box-shadow: 0 0 0 4px var(--over-soft); }
+  .dot.off { background: transparent; border: 2px solid var(--muted); }
+  .dot.info { background: var(--slate-2); }
+  .name { font-weight: 700; font-size: 14px; }
+  .name a { text-decoration: none; } .name a:hover { text-decoration: underline; }
+  .sched { font-size: 12px; color: var(--slate-2); }
+  .reason { font-size: 13px; color: var(--slate); word-break: break-word; }
+  .row.bad .reason { color: var(--over); } .row.warn .reason { color: var(--warn); }
+  .row.unknown .reason, .row.off .reason { color: var(--slate-2); }
+  .ctrls { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg .btn { border: 0; border-radius: 0; padding: 6px 10px; }
+  .src { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--slate-2); }
+  .empty { padding: 16px; color: var(--slate-2); font-size: 14px; }
+
+  .agents { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 16px; }
+  .chip { font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; text-decoration: none; background: #fff; }
+  .chip:hover { border-color: var(--navy); }
+  .log { font-size: 12px; color: var(--slate-2); padding: 10px 16px; border-top: 1px solid var(--line-soft); }
+  .log:first-child { border-top: 0; }
+  footer { margin-top: 28px; font-size: 13px; color: var(--slate-2); display: flex; gap: 16px; flex-wrap: wrap; }
+
+  #login { max-width: 360px; margin: 18vh auto; background: #fff; border-radius: var(--radius-md); padding: 26px; box-shadow: var(--shadow-sm); border: 1px solid var(--line-soft); }
+  #login input { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; }
+  .err { color: var(--over); font-size: 13px; }
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; display: none; max-width: calc(100vw - 32px); }
+
+  @media (max-width: 720px) {
+    .summary { grid-template-columns: repeat(3, 1fr); }
+    .row { grid-template-columns: 14px 1fr; gap: 4px 10px; }
+    .row .reason, .row .ctrls { grid-column: 2; }
+    .ctrls { justify-content: flex-start; margin-top: 4px; }
+    h1 { font-size: 24px; }
+    .head-links { margin-left: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="login" style="display:none">
+  <div class="eyebrow">2by4 Control</div>
+  <input id="password" type="password" placeholder="Dash password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+  <button class="btn on" onclick="doLogin()">Sign in</button>
+  <div class="err" id="login-error" style="display:none;margin-top:10px">Wrong password.</div>
+</div>
+
+<div class="shell" id="app" style="display:none">
+  <header>
+    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#f8fafc"/><rect x="10" y="10" width="44" height="44" rx="10" fill="none" stroke="#f59e0b" stroke-width="5"/><rect x="22" y="22" width="20" height="20" rx="3" fill="#0f172a"/></svg>
+    <div>
+      <h1>Control</h1>
+      <div class="asof" id="asof">Loading…</div>
+    </div>
+    <div class="head-links">
+      <button class="btn" id="refresh" onclick="load(true)">Refresh</button>
+      <a class="btn" href="/">Launchpad</a>
+      <a class="btn" href="https://claude.ai/artifact/HR3uH5iYGedMaYXbeqB4Qp" target="_blank" rel="noopener">System Map ↗</a>
+    </div>
+  </header>
+
+  <div class="summary" id="summary"></div>
+
+  <section>
+    <div class="section-head"><div class="eyebrow">Needs you</div><div class="eyebrow-note" id="inbox-note"></div></div>
+    <div class="card" id="inbox"></div>
+  </section>
+
+  <div id="groups"></div>
+
+  <section>
+    <div class="section-head"><div class="eyebrow">Agents</div><div class="eyebrow-note">Open one in a cloud session</div></div>
+    <div class="card"><div class="agents" id="agents"><span class="eyebrow-note">Loading…</span></div></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div class="eyebrow">Recent control actions</div></div>
+    <div class="card" id="audit"></div>
+  </section>
+
+  <footer>
+    <span>Auto-refreshes every 60s. Grey = couldn't check (never counted as green).</span>
+    <span>Morning email 7:15 CT.</span>
+  </footer>
+</div>
+<div id="toast"></div>
+
+<script>
+var DASH_PASSWORD = localStorage.getItem('dash_password') || '';
+var GROUPS = ['Mac mini', 'Railway', 'Dash jobs', 'Vercel'];
+var LABEL = { bad: 'Red', warn: 'Amber', ok: 'Green', unknown: 'Unchecked', off: 'Off' };
+var state = null;
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+function api(path, opts) {
+  opts = opts || {};
+  var headers = { 'x-dash-password': DASH_PASSWORD };
+  if (opts.body) headers['Content-Type'] = 'application/json';
+  return fetch(path, { method: opts.method || 'GET', headers: headers, body: opts.body ? JSON.stringify(opts.body) : undefined }).then(function (r) {
+    if (r.status === 401) { localStorage.removeItem('dash_password'); showLogin(); throw new Error('Unauthorized'); }
+    return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.error) || ('HTTP ' + r.status)); return b; });
+  });
+}
+
+function showLogin() { document.getElementById('app').style.display = 'none'; document.getElementById('login').style.display = 'block'; }
+function doLogin() {
+  var pw = document.getElementById('password').value;
+  if (!pw) return;
+  fetch('/api/auth/verify', { method: 'POST', headers: { 'x-dash-password': pw } }).then(function (r) {
+    if (!r.ok) { document.getElementById('login-error').style.display = 'block'; return; }
+    DASH_PASSWORD = pw; localStorage.setItem('dash_password', pw); start();
+  });
+}
+
+function toast(msg) {
+  var t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast._t); toast._t = setTimeout(function () { t.style.display = 'none'; }, 4000);
+}
+
+function ago(iso) {
+  if (!iso) return '';
+  var m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return 'just now'; if (m < 90) return m + 'm ago'; if (m < 2880) return Math.round(m / 60) + 'h ago';
+  return Math.round(m / 1440) + 'd ago';
+}
+
+function controlsFor(r) {
+  var out = [];
+  (r.controls || []).forEach(function (c) {
+    if (c === 'rerun' && r.status !== 'off') out.push('<button class="btn" onclick="act(\'' + r.id + '\',\'rerun\',null,\'Run ' + esc(r.name) + ' now?\')">Run now</button>');
+    if (c === 'restart') out.push('<button class="btn" onclick="act(\'' + r.id + '\',\'restart\',null,\'Restart ' + esc(r.name) + ' on the Mac mini? It runs on the next heartbeat (within 5 min).\')">Restart</button>');
+    if (c === 'kill') {
+      var on = r.detail && r.detail.kill_switch;
+      out.push('<button class="btn danger' + (on ? ' on' : '') + '" onclick="act(\'' + r.id + '\',\'kill\',' + (!on) + ',\'' + (on ? 'Turn the Autopilot kill switch OFF? Rules start executing again on the next tick.' : 'Turn the Autopilot kill switch ON? Nothing executes on any account until it is turned off.') + '\')">Kill switch: ' + (on ? 'ON' : 'off') + '</button>');
+    }
+    if (c === 'mode') {
+      var cur = r.detail && r.detail.mode;
+      out.push('<span class="seg">' + ['auto', 'approve', 'off'].map(function (m) {
+        return '<button class="btn' + (m === cur ? ' on' : '') + '" onclick="act(\'' + r.id + '\',\'mode\',\'' + m + '\',\'Set the HB support agent to ' + m.toUpperCase() + '?\')">' + m + '</button>';
+      }).join('') + '</span>');
+    }
+  });
+  return out.join('');
+}
+
+function rowHtml(r) {
+  var name = r.link ? '<a href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.name) + '</a>' : esc(r.name);
+  return '<div class="row ' + r.status + '" id="row-' + esc(r.id) + '">' +
+    '<span class="dot ' + r.status + '" title="' + LABEL[r.status] + '"></span>' +
+    '<div><div class="name">' + name + '</div><div class="sched">' + esc(r.schedule || '') + '</div></div>' +
+    '<div class="reason">' + esc(r.reason || '') + '</div>' +
+    '<div class="ctrls">' + controlsFor(r) + '</div></div>';
+}
+
+function render(s) {
+  state = s;
+  document.getElementById('asof').textContent = 'As of ' + new Date(s.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + s.rows.length + ' things watched';
+  document.getElementById('summary').innerHTML = ['bad', 'warn', 'ok', 'unknown', 'off'].map(function (k) {
+    return '<div class="pill ' + k + '"><b>' + (s.counts[k] || 0) + '</b><span>' + LABEL[k] + '</span></div>';
+  }).join('');
+
+  var inbox = s.inbox || [];
+  var act = inbox.filter(function (i) { return i.level !== 'info'; }).length;
+  document.getElementById('inbox-note').textContent = act ? act + ' to look at' : 'Nothing waiting on you';
+  document.getElementById('inbox').innerHTML = inbox.length ? inbox.map(function (i) {
+    var title = i.link ? '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(i.title) + '</a>' : (i.rowId ? '<a href="#row-' + esc(i.rowId) + '">' + esc(i.title) + '</a>' : esc(i.title));
+    return '<div class="row ' + i.level + '"><span class="dot ' + i.level + '"></span><div><div class="src">' + esc(i.source) + '</div><div class="name">' + title + '</div></div><div class="reason">' + esc(i.note || '') + '</div><div></div></div>';
+  }).join('') : '<div class="empty">All clear.</div>';
+
+  var html = '';
+  GROUPS.concat(s.rows.map(function (r) { return r.group; }).filter(function (g, i, a) { return GROUPS.indexOf(g) < 0 && a.indexOf(g) === i; })).forEach(function (g) {
+    var rows = s.rows.filter(function (r) { return r.group === g; });
+    if (!rows.length) return;
+    var bad = rows.filter(function (r) { return r.status === 'bad'; }).length, warn = rows.filter(function (r) { return r.status === 'warn'; }).length;
+    html += '<section><div class="section-head"><div class="eyebrow">' + esc(g) + '</div><div class="eyebrow-note">' +
+      (bad || warn ? (bad ? bad + ' red ' : '') + (warn ? warn + ' amber' : '') : 'all ' + rows.length + ' fine or off') +
+      '</div></div><div class="card">' + rows.map(rowHtml).join('') + '</div></section>';
+  });
+  document.getElementById('groups').innerHTML = html;
+
+  var log = (s.audit || []).map(function (a) {
+    return '<div class="log">' + esc(new Date(a.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + ' · ' + esc(a.target) + ' · ' + esc(a.action) + (a.value != null ? ' ' + esc(a.value) : '') + ' → ' + esc(JSON.stringify(a.result)) + '</div>';
+  });
+  (s.commands || []).filter(function (c) { return c.status !== 'done'; }).forEach(function (c) {
+    log.unshift('<div class="log">Mini command ' + esc(c.action) + ' ' + esc(c.label) + ': <b>' + esc(c.status) + '</b> ' + esc(ago(c.queuedAt)) + (c.result ? ' · ' + esc(c.result) : '') + '</div>');
+  });
+  document.getElementById('audit').innerHTML = log.length ? log.join('') : '<div class="empty">No control actions yet.</div>';
+}
+
+function act(target, action, value, question) {
+  if (!confirm(question)) return;
+  api('/api/control/action', { method: 'POST', body: { target: target, action: action, value: value } })
+    .then(function (r) { toast('Done: ' + JSON.stringify(r)); setTimeout(function () { load(true); }, action === 'rerun' ? 4000 : 300); })
+    .catch(function (e) { toast('Failed: ' + e.message); });
+}
+
+function load(fresh) {
+  var b = document.getElementById('refresh'); b.disabled = true;
+  return api('/api/control/status' + (fresh ? '?fresh=1' : '')).then(render)
+    .catch(function (e) { if (e.message !== 'Unauthorized') document.getElementById('asof').textContent = 'Couldn\'t load status: ' + e.message; })
+    .then(function () { b.disabled = false; });
+}
+
+function loadAgents() {
+  api('/api/agents').then(function (d) {
+    document.getElementById('agents').innerHTML = (d.agents || []).map(function (a) {
+      var prompt = a.prompt || ('Use the ' + a.name + ' agent');
+      var url = 'https://claude.ai/code?repositories=' + encodeURIComponent(d.repo || '2by4-analytics/2by4-agents') + '&prompt=' + encodeURIComponent(prompt);
+      return '<a class="chip" href="' + esc(url) + '" target="_blank" rel="noopener" title="' + esc(a.tagline || '') + '">' + esc((a.emoji ? a.emoji + ' ' : '') + (a.label || a.name)) + '</a>';
+    }).join('') || '<span class="eyebrow-note">No agents listed.</span>';
+  }).catch(function () { document.getElementById('agents').innerHTML = '<span class="eyebrow-note">Couldn\'t load agents.</span>'; });
+}
+
+function start() {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  load(false); loadAgents();
+  clearInterval(start._t); start._t = setInterval(function () { load(false); }, 60000);
+}
+
+if (DASH_PASSWORD) start(); else showLogin();
+</script>
+</body>
+</html>

@@ -16,7 +16,8 @@
     "googleapis": "^171.4.0",
     "imapflow": "^2.9.1",
     "mailparser": "^3.12.4",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

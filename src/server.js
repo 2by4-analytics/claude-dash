@@ -60,6 +60,11 @@ app.get('/admin', (req, res) => {
 // Static files AFTER API routes
 app.use(express.static(path.join(__dirname, '../public')));
 
+// /control: live status of every job/service + needs-you inbox (services/control)
+app.get('/control', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/control.html'));
+});
+
 // /dash serves the media dashboard
 app.get('/dash', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/dash.html'));
@@ -70,10 +75,14 @@ app.get('*', (req, res) => {
   res.redirect('/');
 });
 
+// Every cron below goes through track() so its last result survives redeploys and
+// shows on /control.
+const { track } = require('./services/control/runlog');
+
 // 5am CT daily — pre-warm CPP snapshot so it's ready when Alan opens the menu
 cron.schedule('0 5 * * *', () => {
   console.log('[Cron] Running 5am CPP snapshot...');
-  runCppSnapshot();
+  track('cpp-snapshot', runCppSnapshot).catch((e) => console.error('[Cron] CPP snapshot failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
 // Every 15 min: Happy Bakers CoC partials + buyers → GHL (marketing email). Only
@@ -81,7 +90,7 @@ cron.schedule('0 5 * * *', () => {
 const { runHbGhlSync } = require('./services/hb-ghl-sync');
 cron.schedule('*/15 * * * *', () => {
   if (!process.env.HB_GHL_PIT) return;
-  runHbGhlSync({ days: 3 }).catch((e) => console.error('[hb-ghl] cron failed:', e.message));
+  track('hb-ghl-sync', () => runHbGhlSync({ days: 3 })).catch((e) => console.error('[hb-ghl] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
 // Every 5 min: Happy Bakers support agent — new customer emails in GHL → refund /
@@ -89,7 +98,7 @@ cron.schedule('*/15 * * * *', () => {
 const { runHbSupport } = require('./services/hb-support');
 cron.schedule('*/5 * * * *', () => {
   if (!process.env.HB_GHL_PIT || !process.env.ANTHROPIC_API_KEY) return;
-  runHbSupport().catch((e) => console.error('[hb-support] cron failed:', e.message));
+  track('hb-support', runHbSupport).catch((e) => console.error('[hb-support] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
 // 7:30am CT daily: Happy Bakers inventory agent — forecast each month's Box item and
@@ -97,14 +106,21 @@ cron.schedule('*/5 * * * *', () => {
 const { runInventory, runTemuSync } = require('./services/hb-inventory');
 cron.schedule('30 7 * * *', () => {
   if (!process.env.HB_GHL_PIT) return;
-  runInventory().catch((e) => console.error('[hb-inventory] cron failed:', e.message));
+  track('hb-inventory', runInventory).catch((e) => console.error('[hb-inventory] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
 // Hourly at :15: Temu mail in alan2by4@gmail → 3PL sheet + log new orders to the Ledger
 // (emails Alan only when it logs something or can't). Skips 7:15 so the 7:30 report owns that hour.
 cron.schedule('15 0-6,8-23 * * *', () => {
   if (!process.env.TEMU_GMAIL_USER || !process.env.ANTHROPIC_API_KEY) return;
-  runTemuSync().catch((e) => console.error('[hb-inventory] temu sync failed:', e.message));
+  track('temu-sync', runTemuSync).catch((e) => console.error('[hb-inventory] temu sync failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
+// 7:15am CT daily: Control morning email: what's red/amber + what needs Alan.
+const control = require('./services/control');
+cron.schedule('15 7 * * *', () => {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
+  track('control-digest', () => control.sendDigest()).catch((e) => console.error('[control] digest failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
 const server = app.listen(PORT, () => {
