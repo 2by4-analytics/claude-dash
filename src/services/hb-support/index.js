@@ -11,9 +11,9 @@
 //   approve  every case goes to Alan first (rollout default)
 //   auto     clear cases are done straight away; Alan gets a short FYI; odd ones are asked
 //   off      nothing runs
-// Code-enforced limits regardless of what the model says: refunds only on the
-// customer's own COMPLETE, unshipped orders (Alan can override shipped), auto refunds
-// capped at HB_SUPPORT_AUTO_REFUND_MAX, cancels only on that customer's live purchases.
+// Code-enforced limits regardless of what the model says: the agent never refunds on
+// its own (Alan's rule 10-24: everything ships quickly); only Alan's answer can refund,
+// and only the customer's own COMPLETE orders. Cancels only on that customer's live purchases.
 
 const store = require('./store');
 const ghl = require('./ghl');
@@ -106,19 +106,8 @@ function planFor(decision, snap) {
   const actions = [];
   let action = decision.action;
 
-  if (action === 'refund_unshipped') {
-    if (!decision.order_ids.length) problems.push('no order named to refund');
-    for (const id of decision.order_ids) {
-      const o = orders.get(id);
-      if (!o) { problems.push(`order ${id} is not on this customer's account`); continue; }
-      if (o.status !== 'COMPLETE' || o.refundRemaining <= 0) { problems.push(`order ${id} is ${o.status} with ${money(o.refundRemaining)} refundable`); continue; }
-      if (o.shipped) { problems.push(`order ${id} has shipped`); continue; }
-      actions.push({ type: 'refund_order', order_id: id });
-    }
-    const refunded = new Set(actions.map((a) => a.order_id));
-    const subIds = new Set(decision.purchase_ids);
-    for (const p of snap.purchases) if (p.live && refunded.has(p.orderId)) subIds.add(p.purchaseId);
-    for (const id of subIds) if (purchases.get(id)?.live) actions.push({ type: 'cancel_purchase', purchase_id: id });
+  if (action === 'refund_unshipped' || decision.order_ids.length) {
+    problems.push('the agent never refunds; refunds are owner-only');
   } else if (action === 'cancel_subscriptions') {
     for (const id of decision.purchase_ids) {
       const p = purchases.get(id);
@@ -503,6 +492,18 @@ function closeCases(ids) {
   return { closed, skipped };
 }
 
+// Same as Alan's "rule N: <text>" / "rule N: delete" emails, for fixing lessons from the laptop.
+function editLesson(id, text) {
+  if (running) throw new Error('agent is mid-run, try again in a minute');
+  loadAll();
+  const i = lessons.findIndex((l) => l.id === id);
+  if (i < 0) throw new Error(`unknown lesson ${id}`);
+  if (/^delete\b/i.test(text.trim())) lessons.splice(i, 1);
+  else lessons[i] = { ...lessons[i], text: text.trim(), editedAt: new Date().toISOString() };
+  saveAll();
+  return { lessons };
+}
+
 function setMode(next) {
   if (!['auto', 'approve', 'off'].includes(next)) throw new Error('mode must be auto, approve or off');
   loadAll();
@@ -512,4 +513,4 @@ function setMode(next) {
   return mode();
 }
 
-module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, closeCases, setMode, _planFor: planFor, _describeAccount: describeAccount };
+module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount };

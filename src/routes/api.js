@@ -362,6 +362,11 @@ router.post('/hb/support/close', (req, res) => {
   try { res.json(hbSupport.closeCases(String(req.query.ids || req.body.ids || '').split(',').map(Number).filter(Boolean))); }
   catch (e) { res.status(409).json({ error: e.message }); }
 });
+// Edit or delete a lesson: ?id=24 with body { text } (text "delete" removes it)
+router.post('/hb/support/lesson', (req, res) => {
+  try { res.json(hbSupport.editLesson(Number(req.query.id || req.body.id), String(req.body.text || ''))); }
+  catch (e) { res.status(409).json({ error: e.message }); }
+});
 router.post('/hb/support/mode', (req, res) => {
   try { res.json({ mode: hbSupport.setMode(String(req.query.mode || req.body.mode || '')) }); }
   catch (e) { res.status(400).json({ error: e.message }); }
