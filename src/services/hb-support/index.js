@@ -70,6 +70,7 @@ function describePlan(plan, snap) {
     if (a.type === 'partial_refund') return `Refund ${money(a.amount)} on order ${a.order_id}`;
     return `Cancel subscription ${a.purchase_id}`;
   });
+  if (plan.stopEmails) parts.push('Stop all emails to them (GHL email DND)');
   if (!parts.length) parts.push(plan.action === 'no_reply' ? 'Nothing (no reply needed)' : 'No account changes');
   return parts.join('\n');
 }
@@ -108,7 +109,7 @@ function planFor(decision, snap) {
   if (problems.length) action = 'escalate';
   const refundTotal = actions.filter((a) => a.type === 'refund_order').reduce((s, a) => s + orders.get(a.order_id).refundRemaining, 0);
   const autoOk = action !== 'escalate' && Number(decision.confidence) >= 0.75 && refundTotal <= AUTO_REFUND_MAX();
-  return { action, actions: action === 'escalate' ? [] : actions, proposedActions: actions, problems, refundTotal, autoOk };
+  return { action, actions: action === 'escalate' ? [] : actions, proposedActions: actions, problems, refundTotal, autoOk, stopEmails: !!decision.stop_emails };
 }
 
 // Owner-directed actions: same ownership checks, but shipped orders are allowed.
@@ -164,6 +165,14 @@ async function replyToCustomer(c, text) {
   c.replyMessageId = await ghl.sendEmail({ contactId: c.contactId, conversationId: c.conversationId, to: c.email, fromName: 'Maggie Bennett', subject, text, replyMessageId: c.inboundMessageId });
   c.replySentAt = new Date().toISOString();
   c.replyText = text;
+}
+
+// After the reply: email DND would block it.
+async function stopEmails(c) {
+  if (c.emailsStoppedAt || !c.contactId) return false;
+  await ghl.stopEmails(c.contactId, `Customer asked to stop emails (${tag(c.id)})`);
+  c.emailsStoppedAt = new Date().toISOString();
+  return true;
 }
 
 async function emailOwner(c, subjectTail, text) {
@@ -245,6 +254,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
       return c;
     }
     await replyToCustomer(c, c.decision.reply);
+    if (c.plan.stopEmails) await stopEmails(c);
     c.status = 'done';
     await emailOwner(c, `Done: ${c.decision.summary}`, `Handled automatically.\n\n${describePlan(c.plan, snapshot)}\n\nReply sent as Maggie:\n${c.decision.reply}\n\nIf this was wrong, reply and tell me what to do; I'll fix it and remember.\n\n${customerBlock(c)}\n\nGHL conversation: ${ghl.link(c.conversationId)}`);
     return c;
@@ -286,7 +296,7 @@ async function handleOwner(msg) {
 
   let out;
   if (PLAIN_YES.test(text) && c.plan.action !== 'escalate') {
-    out = { actions: c.plan.proposedActions, send_reply: c.plan.action !== 'no_reply', reply: c.decision.reply, lesson: null, confirmation: 'Doing exactly what I proposed.' };
+    out = { actions: c.plan.proposedActions, send_reply: c.plan.action !== 'no_reply', reply: c.decision.reply, stop_emails: c.plan.stopEmails, lesson: null, confirmation: 'Doing exactly what I proposed.' };
   } else {
     out = await callTool({
       system: prompt.system(lessons), tool: prompt.ANSWER_TOOL,
@@ -294,7 +304,7 @@ async function handleOwner(msg) {
         customerBlock(c),
         `THEIR CHECKOUT CHAMP ACCOUNT (current)\n${describeAccount(c.snapshot)}`,
         `WHAT YOU PROPOSED\nAction: ${c.plan.action}\n${describePlan({ ...c.plan, actions: c.plan.proposedActions }, c.snapshot)}\nReply: ${c.decision.reply}\n${c.decision.question_for_owner ? `Your question: ${c.decision.question_for_owner}` : ''}`,
-        c.status === 'done' ? `THIS CASE WAS ALREADY HANDLED: ${(c.executed || []).filter((e) => e.ok).map((e) => e.key).join(', ') || 'no account changes'}; reply sent: ${c.replySentAt ? 'yes' : 'no'}. The owner is correcting it — only list ADDITIONAL actions, and only reply if the customer needs to hear something new.` : '',
+        c.status === 'done' ? `THIS CASE WAS ALREADY HANDLED: ${(c.executed || []).filter((e) => e.ok).map((e) => e.key).join(', ') || 'no account changes'}; reply sent: ${c.replySentAt ? 'yes' : 'no'}; emails stopped: ${c.emailsStoppedAt ? 'yes' : 'no'}. The owner is correcting it — only list ADDITIONAL actions, and only reply if the customer needs to hear something new.` : '',
         `THE OWNER'S ANSWER (this is authoritative)\n${text}`,
       ].filter(Boolean).join('\n\n'),
     });
@@ -304,11 +314,13 @@ async function handleOwner(msg) {
   const results = await execute(c, ok);
   const failed = results.filter((r) => !r.ok);
   if (out.send_reply && out.reply && !failed.length) await replyToCustomer(c, out.reply);
+  const stopped = out.stop_emails && !failed.length && await stopEmails(c);
   if (out.lesson) lessons.push({ id: nextLessonId(), at: new Date().toISOString(), text: out.lesson, caseId: c.id });
   c.status = failed.length ? 'awaiting_owner' : 'done';
 
   const lines = [out.confirmation];
   for (const r of results) lines.push(`${r.ok ? 'Done' : 'FAILED'}: ${r.type} ${r.order_id || r.purchase_id}${r.amount ? ` ${money(r.amount)}` : ''}${r.ok ? '' : ` (${r.message})`}`);
+  if (stopped) lines.push('Done: stopped all emails to them (GHL email DND)');
   if (problems.length) lines.push(`Skipped: ${problems.join('; ')}`);
   lines.push(out.send_reply && !failed.length ? `Reply sent to ${c.email}:\n${out.reply}` : failed.length ? 'No reply sent because something failed. Tell me how to proceed.' : 'No reply sent.');
   if (out.lesson) lines.push(`Saved as a rule for next time: ${out.lesson}`);

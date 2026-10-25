@@ -90,6 +90,12 @@ async function addContactEmail(contactId, email) {
   console.log('[hb-support] added', email.replace(/^(.).*@/, '$1***@'), 'to contact', contactId);
 }
 
+// Email DND stops every GHL email to the contact (workflows and manual sends), so set it
+// only after the last reply to them has gone out.
+async function stopEmails(contactId, message) {
+  await http().put(`/contacts/${contactId}`, { dndSettings: { Email: { status: 'active', message } } });
+}
+
 async function contactIdFor(email, firstName = 'Alan', lastName = '') {
   const r = await http().get('/contacts/search/duplicate', { params: { locationId: loc(), email } });
   if (r.data.contact && r.data.contact.id) return r.data.contact.id;
@@ -97,4 +103,4 @@ async function contactIdFor(email, firstName = 'Alan', lastName = '') {
   return up.data.contact.id;
 }
 
-module.exports = { recentConversations, getConversation, getMessages, emailMessage, sendEmail, contactIdFor, link, render, htmlToText };
+module.exports = { recentConversations, getConversation, getMessages, emailMessage, sendEmail, stopEmails, contactIdFor, link, render, htmlToText };

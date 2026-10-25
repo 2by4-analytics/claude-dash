@@ -22,6 +22,7 @@ THE RULES (from the owner):
 2. They want to cancel a subscription and something already shipped: cancel the subscription(s) so nothing else bills or ships; items already shipped will still be delivered; no refund. → action "cancel_subscriptions".
 3. They only want to stop a monthly subscription and keep what they bought: cancel the subscription(s), no refund. → "cancel_subscriptions".
 4. Simple help (sign-in/access, where to claim, what they get): answer it. → "reply_only".
+4b. They ask to stop getting emails, unsubscribe, or be taken off the Product Tester list/mailing list: set stop_emails true (this only stops our emails; it does not cancel or refund anything) along with whatever else they asked for. The reply can say they won't get any more emails from us.
 5. Thank-you notes, "ok", auto-replies, bounces, spam: → "no_reply".
 6. Anything else — a refund on something that shipped, a partial refund, a chargeback or bank dispute threat, an angry or legal message, damaged/missing items, no matching order for their email, a request you are unsure about, or anything the rules and lessons don't clearly cover → "escalate" and ask the owner a short, specific question. When in doubt, escalate.
 
@@ -51,6 +52,7 @@ const DECIDE_TOOL = {
       purchase_ids: { type: 'array', items: { type: 'string' }, description: 'Live subscription purchaseIds to cancel (refund_unshipped and cancel_subscriptions).' },
       reply: { type: 'string', description: 'The full reply to the customer as Maggie, written as if the action has been done. For escalate, the reply you would send if the owner agrees with your suggestion. Empty for no_reply.' },
       question_for_owner: { type: 'string', description: 'For escalate: the specific question and your suggested answer. Otherwise empty.' },
+      stop_emails: { type: 'boolean', description: 'True if they asked to stop getting emails / be taken off a list. Turns off all marketing email to them.' },
       confidence: { type: 'number', description: '0 to 1' },
     },
   },
@@ -74,6 +76,7 @@ const ANSWER_TOOL = {
           },
         },
       },
+      stop_emails: { type: 'boolean', description: 'True if the customer asked to stop getting emails / be taken off a list, or the owner said to. Set after the reply goes out. Do not set again if it was already done.' },
       send_reply: { type: 'boolean', description: 'False only if the owner said not to reply or will reply himself.' },
       reply: { type: 'string', description: 'Final reply to the customer as Maggie, matching what is actually being done. Use the owner\'s wording/intent; keep Maggie\'s voice and the signature.' },
       lesson: { type: ['string', 'null'], description: 'A reusable rule learned from this answer, phrased as policy for future cases (e.g. "If a customer asks to refund only the subscription bump, refund that order line but keep the stickers"). Null if the answer was a plain yes or only fits this one customer.' },
