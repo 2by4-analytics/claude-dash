@@ -75,7 +75,7 @@ async function autopilot(item) {
   const modes = live.reduce((m, a) => ((m[a.mode] = (m[a.mode] || 0) + 1), m), {});
   const out = {
     lastAt: newest,
-    detail: { kill_switch: ov.kill_switch, modes, accounts: live.map((a) => ({ id: a.id, name: a.name, mode: a.mode, status: a.last_run_status, at: a.last_run_finished, alerts: a.open_alerts })) },
+    detail: { kill_switch: ov.kill_switch, modes, queue: ov.queue || null, accounts: live.map((a) => ({ id: a.id, slug: a.slug, name: a.name, mode: a.mode, status: a.last_run_status, at: a.last_run_finished, alerts: a.open_alerts, pending: a.pending_actions || 0 })) },
     status: 'ok',
     reason: `${live.length} accounts (${Object.entries(modes).map(([k, v]) => `${v} ${k}`).join(', ')}) · last tick ${ago(newest)}`,
   };
@@ -131,11 +131,20 @@ function launchd(item, hb = heartbeat()) {
 }
 
 // ── Vercel ──
+// Each relay check makes several GHL calls, so an open panel reads them at most every 10 min.
+const VERCEL_CACHE_MS = 10 * MIN;
+const vercelCache = {};
 async function vercelHealth(item) {
-  const base = process.env[item.env];
-  if (!base || !process.env.STATUS_SECRET) return { status: 'unknown', reason: 'dry health check not wired yet' };
+  const hit = vercelCache[item.id];
+  if (hit && Date.now() - hit.at < VERCEL_CACHE_MS) return hit.value;
+  const value = await vercelHealthLive(item);
+  vercelCache[item.id] = { at: Date.now(), value };
+  return value;
+}
+async function vercelHealthLive(item) {
+  if (!process.env.STATUS_SECRET) return { status: 'unknown', reason: 'STATUS_SECRET not set on Dash' };
   try {
-    const { data } = await axios.get(`${base}/api/health?dry=1`, { timeout: 15000, headers: { Authorization: `Bearer ${process.env.STATUS_SECRET}` }, validateStatus: () => true });
+    const { data } = await axios.get(`${item.url}/api/health?dry=1`, { timeout: 15000, headers: { Authorization: `Bearer ${process.env.STATUS_SECRET}` }, validateStatus: () => true });
     if (data && data.ok) return { status: data.paused ? 'off' : 'ok', lastAt: data.lastLead || data.generatedAt, reason: data.paused ? 'paused' : `healthy · last ${data.lastLead ? 'lead' : 'refresh'} ${ago(data.lastLead || data.generatedAt)}` };
     return { status: 'bad', lastAt: data && (data.lastLead || data.generatedAt), reason: (data && (data.problems || []).join('; ')) || 'unhealthy' };
   } catch (e) { return { status: 'unknown', reason: `couldn't check: ${errText(e)}` }; }

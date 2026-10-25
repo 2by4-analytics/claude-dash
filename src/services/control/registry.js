@@ -38,10 +38,10 @@ module.exports = [
   { id: 'autopilot-deploy-retry', group: 'Mac mini', type: 'launchd', label: 'com.2by4.autopilot-deploy-retry', name: 'Autopilot deploy retry', schedule: 'loads itself only while Railway deploys are paused', idleWhenUnloaded: true },
 
   // ── Vercel (dry health checks: see the ?dry=1 change in each relay) ──
-  { id: 'burnett-relay', group: 'Vercel', type: 'vercel-health', name: 'Burnett lead relay', schedule: 'health 9:00 CT', env: 'BURNETT_RELAY_URL' },
-  { id: 'burnett-dashboard', group: 'Vercel', type: 'vercel-health', name: 'Burnett dashboard', schedule: 'refresh 6:00 CT', env: 'BURNETT_DASHBOARD_URL' },
-  { id: 'sunflower-relay', group: 'Vercel', type: 'vercel-health', name: 'Sunflower lead relay', schedule: 'health 9:00 CT', env: 'SUNFLOWER_RELAY_URL' },
-  { id: 'uspb-relay', group: 'Vercel', type: 'vercel-health', name: 'USPB lead relay', schedule: 'health 9:00 CT', env: 'USPB_RELAY_URL' },
+  { id: 'burnett-relay', group: 'Vercel', type: 'vercel-health', name: 'Burnett lead relay', schedule: 'health 9:00 CT', url: process.env.BURNETT_RELAY_URL || 'https://2by4-burnett-relay.vercel.app', link: 'https://vercel.com/alan-6419s-projects/2by4-burnett-relay' },
+  { id: 'burnett-dashboard', group: 'Vercel', type: 'vercel-health', name: 'Burnett dashboard', schedule: 'refresh 6:00 CT', url: process.env.BURNETT_DASHBOARD_URL || 'https://2by4-burnett-dashboard.vercel.app', link: 'https://vercel.com/alan-6419s-projects/2by4-burnett-dashboard' },
+  { id: 'sunflower-relay', group: 'Vercel', type: 'vercel-health', name: 'Sunflower lead relay', schedule: 'health 9:00 CT', url: process.env.SUNFLOWER_RELAY_URL || 'https://2by4-sunflower-relay.vercel.app', link: 'https://vercel.com/alan-6419s-projects/2by4-sunflower-relay' },
+  { id: 'uspb-relay', group: 'Vercel', type: 'vercel-health', name: 'USPB lead relay', schedule: 'health 9:00 CT', url: process.env.USPB_RELAY_URL || 'https://2by4-uspb-relay.vercel.app', link: 'https://vercel.com/alan-6419s-projects/2by4-uspb-relay' },
   { id: 'shedpro-relay', group: 'Vercel', type: 'none', name: 'ShedPro relay', schedule: 'sweeps 5:40 + 6:15 CT', reason: 'no health endpoint yet' },
   { id: 'ops-dashboard', group: 'Vercel', type: 'ops', name: 'Ops dashboard (lead flow doctor)', schedule: 'refresh 7:00 CT',
     url: process.env.OPS_DASHBOARD_URL || 'https://2by4-ops-dashboard.vercel.app', link: 'https://2by4-ops-dashboard.vercel.app' },

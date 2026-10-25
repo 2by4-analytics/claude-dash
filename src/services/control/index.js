@@ -19,6 +19,13 @@ async function rows() {
     const { type, needsEnv, env, url, ...pub } = item;
     return { ...pub, ...p };
   }));
+  // A running worker that isn't claiming jobs looks fine to launchd; Autopilot's backlog shows it.
+  const worker = out.find((r) => r.id === 'autopilot-worker');
+  const q = (out.find((r) => r.id === 'autopilot') || {}).detail?.queue;
+  if (worker && q && q.queued && q.oldest_queued_at && Date.now() - new Date(q.oldest_queued_at).getTime() > 30 * 60 * 1000 && worker.status === 'ok') {
+    worker.status = 'warn';
+    worker.reason = `${q.queued} image job${q.queued > 1 ? 's' : ''} queued, oldest ${Math.round((Date.now() - new Date(q.oldest_queued_at).getTime()) / 60000)}m: not being claimed · ${worker.reason}`;
+  }
   // Mini launchd jobs the registry doesn't know about yet still get a row.
   const hb = store.load('mini', null);
   const known = new Set(registry.filter((r) => r.label).map((r) => r.label));
@@ -46,6 +53,10 @@ async function inbox(list) {
     }
     for (const [name, c] of Object.entries(by)) {
       if (c.error + c.warn) items.push({ source: 'Autopilot', level: c.error ? 'bad' : 'warn', title: `${name}: ${c.error + c.warn} alert${c.error + c.warn > 1 ? 's' : ''} ${c.error + c.warn > 1 ? 'need' : 'needs'} you`, note: c.first, count: c.error + c.warn, link: c.slug ? `${ap.url}/#${c.slug}` : ap.url });
+    }
+    const apRow = list.find((r) => r.id === 'autopilot');
+    for (const a of (apRow && apRow.detail && apRow.detail.accounts) || []) {
+      if (a.pending) items.push({ source: 'Autopilot', level: 'warn', title: `${a.name}: ${a.pending} proposed action${a.pending > 1 ? 's' : ''} to approve or reject`, count: a.pending, link: `${ap.url}/#${a.slug}` });
     }
     const info = Object.values(by).reduce((s, c) => s + c.info, 0);
     if (info) items.push({ source: 'Autopilot', level: 'info', title: `${info} info alerts (graduate candidates, new test sets…)`, count: info, link: ap.url });
