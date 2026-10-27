@@ -135,7 +135,17 @@ async function runAddressScan({ sendOwner }) {
   if (st.mode === 'off') return { mode: 'off' };
   const orders = (await ss.awaitingShipment()).filter(ss.isHb);
   const flagged = new Map(orders.filter(ss.badAddress).map((o) => [String(o.orderId), o]));
-  for (const [id, o] of flagged) if (!st.orders[id]) st.orders[id] = record(o);
+  for (const [id, o] of flagged) {
+    if (st.orders[id]) continue;
+    st.orders[id] = record(o);
+    // A replacement order (same order number, new ShipStation id) is made after the
+    // customer settled the address, so it still carries the validation warning (10-27).
+    const prev = Object.values(st.orders).find((r) => r.orderNumber === o.orderNumber && String(r.ssOrderId) !== id);
+    if (prev) {
+      Object.assign(st.orders[id], { status: 'fixed', fixedNote: `replacement for ShipStation order ${prev.ssOrderId}` });
+      if (prev.status === 'awaiting_customer') Object.assign(prev, { status: 'fixed', fixedNote: `replaced by ShipStation order ${id}` });
+    }
+  }
   // Eric fixed it (or it shipped) before we got to it.
   for (const [id, r] of Object.entries(st.orders)) if ((r.status === 'found' || r.status === 'proposed') && !flagged.has(id)) { r.status = 'fixed'; r.fixedNote = 'no longer flagged before we acted'; }
   // Alan already approved these; a ShipStation error gets two more tries on later runs.
