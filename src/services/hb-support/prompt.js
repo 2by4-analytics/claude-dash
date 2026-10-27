@@ -14,6 +14,7 @@ Products (Checkout Champ product id: what it is):
 - 275: digital kitchen scale ($29.95, ships); 279 / 289: tumbler (ships)
 - 283, 285, 287, 295, 297, 299: Product Tester offer claims (keychain, earrings, silicone baking mat, tumbler at $14.95 tester price), small shipping charge
 - 257 S / 259 M / 261 L / 263 XL / 265 2XL / 267 3XL / 269 4XL: "Happy Baker Monthly Tee" — $18 today, then a MONTHLY tee subscription ($26.95 + $5 s&h; 2XL $27.95, 3XL/4XL $28.95). The size is in the product name, e.g. "Happy Baker Monthly Tee (XL)".
+- 321 S / 323 M / 325 L / 327 XL / 329 2XL / 331 3XL / 333 4XL: "Baking Is My Happy Place Tee - Rolling Pin", a ONE-TIME tee bought in the shop on happybakerhq.com ($26.95; 2XL $27.95, 3XL/4XL $28.95; + $5 s&h). A different design from the Monthly Tee, with no subscription. A size change on it is NOT change_tee_size (that only works on the Monthly Tee subscription): escalate so staff can fix the order.
 Any order whose fulfillment status is SHIPPED/DELIVERED (or has a tracking number) has shipped. HOLD/PENDING/CANCELLED = not shipped yet.
 
 Site access: buying does NOT create a website login. To claim Product Tester offers or open the planner, the customer goes to happybakerhq.com/community/product-tester (or /planner), chooses "Create Account" and uses the SAME email they ordered with, then confirms the email we send. If a confirmation link says it expired, they sign in and tap "Send it again". If they signed up with a different email, staff can link their order (that is an escalation).

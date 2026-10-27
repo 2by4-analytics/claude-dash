@@ -44,6 +44,9 @@ const PRODUCT_TAGS = [
   [[283, 285, 287, 295, 297, 299], 'hb tester claim'],
   [[255], 'hb box subscriber'],
   [[257, 259, 261, 263, 265, 267, 269], 'hb tee'],
+  // Rolling Pin design, one-time shop tee on happybakerhq.com (not the funnel's Monthly Tee,
+  // so it stays out of 'hb tee' and the Bought Tee stage).
+  [[321, 323, 325, 327, 329, 331, 333], 'hb rolling pin tee'],
   [[279, 289], 'hb tumbler'],
   [[275], 'hb scale'],
 ];
