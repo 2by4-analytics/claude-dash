@@ -375,8 +375,15 @@ async function handleOwner(msg) {
   c.ownerAnswer = text;
   c.snapshot = await accountFor(c.email, c.messages.map((x) => x.text));
 
-  let out;
-  if (PLAIN_YES.test(text) && c.plan.action !== 'escalate') {
+  // A reply held for a by-hand change (waiting_on_owner, or a held unbacked claim): the
+  // owner's "done" / "yes" means he made the change, so send it as is. HB-CS-116 (10-28):
+  // "Link it then reply" closed the case with nothing done and the reply never sent.
+  const DONE_BY_HAND = /^\s*(done|fixed|linked|did it|all set|it'?s done|i did it|handled)[\s.!]*(send( it)?)?[\s.!]*$/i;
+  let out, manual = false;
+  if (c.heldReply && (PLAIN_YES.test(text) || DONE_BY_HAND.test(text))) {
+    out = { actions: [], send_reply: true, reply: c.heldReply, stop_emails: false, lesson: null, confirmation: 'You made the change by hand, so I sent the reply I was holding.' };
+    manual = true;
+  } else if (PLAIN_YES.test(text) && c.plan.action !== 'escalate') {
     out = { actions: c.plan.proposedActions, send_reply: c.plan.action !== 'no_reply', reply: c.decision.reply, stop_emails: c.plan.stopEmails, lesson: null, confirmation: 'Doing exactly what I proposed.' };
   } else {
     out = await callTool({
@@ -385,6 +392,7 @@ async function handleOwner(msg) {
         customerBlock(c),
         `THEIR CHECKOUT CHAMP ACCOUNT (current)\n${describeAccount(c.snapshot)}`,
         `WHAT YOU PROPOSED\nAction: ${c.plan.action}\n${describePlan({ ...c.plan, actions: c.plan.proposedActions }, c.snapshot)}\nReply: ${c.decision.reply}\n${c.decision.question_for_owner ? `Your question: ${c.decision.question_for_owner}` : ''}`,
+        c.heldReply ? `YOU ARE WAITING ON THE OWNER: ${c.waitingFor || 'a change made by hand'}\nReply you are holding until then: ${c.heldReply}\nIf the owner says it's done, send that reply (adjust only if he asks).` : '',
         c.status === 'done' ? `THIS CASE WAS ALREADY HANDLED: ${(c.executed || []).filter((e) => e.ok).map((e) => e.key).join(', ') || 'no account changes'}; reply sent: ${c.replySentAt ? 'yes' : 'no'}; emails stopped: ${c.emailsStoppedAt ? 'yes' : 'no'}. The owner is correcting it — only list ADDITIONAL actions, and only reply if the customer needs to hear something new.` : '',
         `THE OWNER'S ANSWER (this is authoritative)\n${text}`,
       ].filter(Boolean).join('\n\n'),
@@ -394,21 +402,26 @@ async function handleOwner(msg) {
   const { ok, problems } = checkOwnerActions(out.actions, c.snapshot);
   const results = await execute(c, ok);
   const failed = results.filter((r) => !r.ok);
-  const claims = out.send_reply && out.reply ? unbackedClaims(out.reply, doneActions(c), c.snapshot) : [];
+  const claims = out.send_reply && out.reply && !manual ? unbackedClaims(out.reply, doneActions(c), c.snapshot) : [];
   const held = claims.length > 0;
+  // Nothing done and nothing sent, but the owner's ask isn't finished: a by-hand step the
+  // agent has no action for, or every action it tried was skipped by the checks.
+  const waiting = !failed.length && !held && !out.send_reply && !!out.reply && (out.waiting_on_owner || (problems.length > 0 && !results.length));
   if (out.send_reply && out.reply && !failed.length && !held) await replyToCustomer(c, out.reply);
   const stopped = out.stop_emails && !failed.length && await stopEmails(c);
   if (out.lesson) lessons.push({ id: nextLessonId(), at: new Date().toISOString(), text: out.lesson, caseId: c.id });
-  c.status = failed.length || held ? 'awaiting_owner' : 'done';
+  if (held || waiting) { c.heldReply = out.reply; c.waitingFor = out.confirmation; } else if (c.replySentAt && out.send_reply) { delete c.heldReply; delete c.waitingFor; }
+  c.status = failed.length || held || waiting ? 'awaiting_owner' : 'done';
 
   const lines = [out.confirmation];
-  if (held) lines.push(`I did NOT send the reply: it says "${claims.join(' / ')}", but nothing I did makes that true. Make the change by hand and tell me to send it, or tell me what to do instead.`);
+  if (held) lines.push(`I did NOT send the reply: it says "${claims.join(' / ')}", but nothing I did makes that true. Make the change by hand and reply "done", and I'll send it. Or tell me what to do instead.`);
+  if (waiting) lines.push(`This case stays open. When the change is made, reply "done" and I'll send this reply:\n${out.reply}`);
   for (const r of results) lines.push(`${r.ok ? 'Done' : 'FAILED'}: ${r.type} ${r.order_id || r.purchase_id}${r.amount ? ` ${money(r.amount)}` : ''}${r.size ? ` → ${r.size}` : ''}${r.ok && r.type !== 'change_tee_size' ? '' : ` (${r.message})`}`);
   if (stopped) lines.push('Done: stopped all emails to them (GHL email DND)');
   if (problems.length) lines.push(`Skipped: ${problems.join('; ')}`);
-  lines.push(out.send_reply && !failed.length && !held ? `Reply sent to ${c.email}:\n${out.reply}` : failed.length ? 'No reply sent because something failed. Tell me how to proceed.' : held ? `Held reply:\n${out.reply}` : 'No reply sent.');
+  lines.push(out.send_reply && !failed.length && !held ? `Reply sent to ${c.email}:\n${out.reply}` : failed.length ? 'No reply sent because something failed. Tell me how to proceed.' : held ? `Held reply:\n${out.reply}` : waiting ? null : 'No reply sent.');
   if (out.lesson) lines.push(`Saved as a rule for next time: ${out.lesson}`);
-  await emailOwner(c, `${failed.length || held ? 'Problem' : 'Done'}: ${c.decision.summary}`, lines.join('\n\n'));
+  await emailOwner(c, `${failed.length || held ? 'Problem' : waiting ? 'Waiting on you' : 'Done'}: ${c.decision.summary}`, lines.filter(Boolean).join('\n\n'));
   return { case: c.id, status: c.status };
 }
 
