@@ -12,6 +12,7 @@ Products (Checkout Champ product id: what it is):
 - 251 / 281 / 291: Kitchen Planner + Recipe Library ($7 add-on or $14) — DIGITAL, never ships
 - 253: Rush My Order ($3.95)
 - 275: digital kitchen scale ($29.95, ships); 279 / 289: tumbler (ships)
+- 335: Silicone Baking Mat 2 Pack, bought in the shop on happybakerhq.com ($14.95 + $2.99 s&h, one-time, ships)
 - 283, 285, 287, 295, 297, 299: Product Tester offer claims (keychain, earrings, silicone baking mat, tumbler at $14.95 tester price), small shipping charge
 - 257 S / 259 M / 261 L / 263 XL / 265 2XL / 267 3XL / 269 4XL: "Happy Baker Monthly Tee" — $18 today, then a MONTHLY tee subscription ($26.95 + $5 s&h; 2XL $27.95, 3XL/4XL $28.95). The size is in the product name, e.g. "Happy Baker Monthly Tee (XL)".
 - 321 S / 323 M / 325 L / 327 XL / 329 2XL / 331 3XL / 333 4XL: "Baking Is My Happy Place Tee - Rolling Pin", a ONE-TIME tee bought in the shop on happybakerhq.com ($26.95; 2XL $27.95, 3XL/4XL $28.95; + $5 s&h). A different design from the Monthly Tee, with no subscription. A size change on it is NOT change_tee_size (that only works on the Monthly Tee subscription): escalate so staff can fix the order.

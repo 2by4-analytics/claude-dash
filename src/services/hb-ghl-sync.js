@@ -48,6 +48,7 @@ const PRODUCT_TAGS = [
   // so it stays out of 'hb tee' and the Bought Tee stage).
   [[321, 323, 325, 327, 329, 331, 333], 'hb rolling pin tee'],
   [[279, 289], 'hb tumbler'],
+  [[335], 'hb silicone mat'],
   [[275], 'hb scale'],
 ];
 
