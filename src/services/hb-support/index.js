@@ -274,7 +274,10 @@ function proposalEmail(c) {
     `THEIR ACCOUNT\n${describeAccount(c.snapshot)}`,
     `WHAT I'D DO (${p.action === 'escalate' ? 'suggestion' : p.action})\n${describePlan({ ...p, actions: p.proposedActions }, c.snapshot)}`,
     `REPLY I'D SEND AS MAGGIE\n${d.reply || '(no reply)'}`,
+    // An escalate carries no actions, but a "yes" to it goes back through Claude with the
+    // question, which adds the actions (HB-CS-130: cancel ran fine despite this warning).
     ...(() => {
+      if (p.action === 'escalate') return [];
       const claims = unbackedClaims(d.reply, p.proposedActions, c.snapshot);
       return claims.length ? [`WARNING: this reply says "${claims.join(' / ')}", but none of my actions does that, so it would be false. Saying "yes" will not make that change. Make it by hand first, or tell me what to do.`] : [];
     })(),
