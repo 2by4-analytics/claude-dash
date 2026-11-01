@@ -49,6 +49,8 @@ const PRODUCT_TAGS = [
   [[321, 323, 325, 327, 329, 331, 333], 'hb rolling pin tee'],
   [[279, 289], 'hb tumbler'],
   [[335], 'hb silicone mat'],
+  // Christmas cookie cutter sets (2026-11-01): Classic, Whimsy, North Pole Magic, Ultimate 15.
+  [[337, 339, 341, 343], 'hb cookie cutters'],
   [[275], 'hb scale'],
 ];
 
