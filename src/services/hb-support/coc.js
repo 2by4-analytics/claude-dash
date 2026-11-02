@@ -1,7 +1,7 @@
 // Checkout Champ reads + the few writes the support agent may make. Uses the
 // happybaker-site-api user (IP-whitelisted to Dash). Writes: full refund + cancel of
 // an order, partial refund, cancel a subscription (purchase), change a tee's size,
-// customer note.
+// move a buyer to the email they meant (checkout typo), customer note.
 const axios = require('axios');
 
 const BASE = 'https://api.checkoutchamp.com';
@@ -109,4 +109,24 @@ async function changeTeeSize(purchaseId, size, unshippedItems = []) {
   return `subscription now ${p.displayName || p.productName}${fixed ? `; ${fixed} unshipped tee set to ${t.sku}` : ''}${held.length ? `; tee in fulfillment ${held.join(', ')} left as-is (CoC can't edit it without releasing the hold), so check the shipping order's size` : ''}`;
 }
 
-module.exports = { snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };
+// Checkout typo (Elaine Stevens 11-02: paid as mesteven@comast.net, signs in as
+// @comcast.net). The site grants access by looking up a COMPLETE order under the sign-in
+// email, so the customer AND each order (it keeps its own copy) get the new address.
+// Re-reads afterwards: "done" means order/query by the new email finds them.
+async function changeEmail(customerId, orderIds, email) {
+  await write('customer/update', { customerId, emailAddress: email });
+  const notes = [];
+  for (const orderId of orderIds) {
+    try { await write('order/update', { orderId, emailAddress: email }); }
+    catch (e) { notes.push(`order/update ${orderId}: ${e.message}`); }
+  }
+  const stale = [];
+  for (const orderId of orderIds) {
+    const [o] = await query('order/query', { orderId });
+    if (o && String(o.emailAddress || '').toLowerCase() !== email.toLowerCase() && o.orderStatus === 'COMPLETE') stale.push(`${orderId} (${o.emailAddress})`);
+  }
+  if (stale.length) throw new Error(`customer ${customerId} updated, but COMPLETE order ${stale.join(', ')} still has the old email${notes.length ? `; ${notes.join('; ')}` : ''}`);
+  return `customer ${customerId} + order ${orderIds.join(', ')} now ${email}`;
+}
+
+module.exports = { snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, changeEmail, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };

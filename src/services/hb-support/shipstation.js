@@ -27,21 +27,39 @@ const getOrder = async (orderId) => (await http().get(`/orders/${orderId}`)).dat
 const isHb = (o) => HB_STORE_IDS.includes(Number(o.advancedOptions && o.advancedOptions.storeId));
 const badAddress = (o) => /warning|fail/i.test(String(o.shipTo && o.shipTo.addressVerified || ''));
 
+// Some imported orders carry billToParty without billToMyOtherAccount, and ShipStation
+// rejects them on the way back in (400 "'billToMyOtherAccount' is required", 10-20).
+function postableOptions(o) {
+  const advancedOptions = { ...o.advancedOptions };
+  if (advancedOptions.billToParty && !advancedOptions.billToMyOtherAccount) {
+    for (const k of ['billToParty', 'billToAccount', 'billToPostalCode', 'billToCountryCode', 'billToMyOtherAccount']) delete advancedOptions[k];
+  }
+  return advancedOptions;
+}
+
 // V1 has no cancel endpoint: createorder upserts on orderKey, so post the whole order back
 // with a new status (a partial body would blank the fields left out).
 async function cancelOrder(orderId, note) {
   const o = await getOrder(orderId);
   if (!isHb(o)) throw new Error(`order ${o.orderNumber} is not in a Happy Bakers store`);
   const internalNotes = [o.internalNotes, note].filter(Boolean).join('\n');
-  // Some imported orders carry billToParty without billToMyOtherAccount, and ShipStation
-  // rejects them on the way back in (400 "'billToMyOtherAccount' is required", 10-20).
-  const advancedOptions = { ...o.advancedOptions };
-  if (advancedOptions.billToParty && !advancedOptions.billToMyOtherAccount) {
-    for (const k of ['billToParty', 'billToAccount', 'billToPostalCode', 'billToCountryCode', 'billToMyOtherAccount']) delete advancedOptions[k];
-  }
-  const r = await http().post('/orders/createorder', { ...o, advancedOptions, orderStatus: 'cancelled', internalNotes });
+  const r = await http().post('/orders/createorder', { ...o, advancedOptions: postableOptions(o), orderStatus: 'cancelled', internalNotes });
   if (r.data.orderStatus !== 'cancelled') throw new Error(`ShipStation left ${o.orderNumber} as ${r.data.orderStatus}`);
   return r.data;
 }
 
-module.exports = { awaitingShipment, getOrder, cancelOrder, isHb, badAddress, HB_STORE_IDS };
+// The customer email on the not-yet-shipped HB orders for one CoC order number (same
+// whole-order upsert). Shipped/cancelled ones are left alone: V1 ignores edits to a
+// cancelled order, and a shipped one has nothing left to notify.
+async function setEmail(orderNumber, email) {
+  const r = await http().get('/orders', { params: { orderNumber } });
+  const out = [];
+  for (const o of (r.data.orders || []).filter(isHb)) {
+    if (!/^(awaiting_payment|awaiting_shipment|on_hold|pending_fulfillment)$/.test(o.orderStatus) || String(o.customerEmail || '').toLowerCase() === email.toLowerCase()) continue;
+    await http().post('/orders/createorder', { ...o, advancedOptions: postableOptions(o), customerEmail: email });
+    out.push(o.orderId);
+  }
+  return out;
+}
+
+module.exports = { setEmail, awaitingShipment, getOrder, cancelOrder, isHb, badAddress, HB_STORE_IDS };

@@ -18,7 +18,7 @@ Products (Checkout Champ product id: what it is):
 - 321 S / 323 M / 325 L / 327 XL / 329 2XL / 331 3XL / 333 4XL: "Baking Is My Happy Place Tee - Rolling Pin", a ONE-TIME tee bought in the shop on happybakerhq.com ($26.95; 2XL $27.95, 3XL/4XL $28.95; + $5 s&h). A different design from the Monthly Tee, with no subscription. A size change on it is NOT change_tee_size (that only works on the Monthly Tee subscription): escalate so staff can fix the order.
 Any order whose fulfillment status is SHIPPED/DELIVERED (or has a tracking number) has shipped. HOLD/PENDING/CANCELLED = not shipped yet.
 
-Site access: buying does NOT create a website login. To claim Product Tester offers or open the planner, the customer goes to happybakerhq.com/community/product-tester (or /planner), chooses "Create Account" and uses the SAME email they ordered with, then confirms the email we send. If a confirmation link says it expired, they sign in and tap "Send it again". If they signed up with a different email, staff can link their order (that is an escalation).
+Site access: buying does NOT create a website login. To claim Product Tester offers or open the planner, the customer goes to happybakerhq.com/community/product-tester (or /planner), chooses "Create Account" and uses the SAME email they ordered with, then confirms the email we send. If a confirmation link says it expired, they sign in and tap "Send it again". If they signed up with a different email, their order can be moved to it (see rule 4d).
 
 THE RULES (from the owner):
 1. NO REFUNDS, ever. Everything ships quickly, so we never refund an order, even if nothing has shipped yet and even if they ask for a refund. Only the owner can make an exception, by saying so in an answer.
@@ -28,6 +28,7 @@ THE RULES (from the owner):
 4. Simple help (sign-in/access, where to claim, what they get): answer it. → "reply_only".
 4b. They ask to stop getting emails, unsubscribe, or be taken off the Product Tester list/mailing list: set stop_emails true (this only stops our emails; it does not cancel or refund anything) along with whatever else they asked for. The reply can say they won't get any more emails from us.
 4c. They want a different tee size: → "change_tee_size" with tee_size (S, M, L, XL, 2XL, 3XL or 4XL) and the tee subscription's purchaseId in purchase_ids. It switches the subscription so every future tee is the new size, and fixes the tee in any order that hasn't shipped. In the reply just say their tee is now a Medium (or whichever size); if their current tee already shipped, say the size is updated on their account.
+4d. They typed their email wrong at checkout (their orders are under a misspelled address they name, like name@comast.net for name@comcast.net) and can't get into the site: → "change_email" with email_change_from = the misspelled address. It moves their customer record and orders to the address they are writing from, so they create their account / sign in with that one. The account section says whether the other address is a clear checkout typo. If it is NOT, still choose change_email (the owner approves it). Only for moving orders to the address they wrote from; if they want some other address, escalate. Reply: say you've fixed the email on their order, and they can now create their account at happybakerhq.com/community/product-tester with the address they wrote from (name it).
 5. Thank-you notes, "ok", auto-replies, bounces, spam: → "no_reply".
 6. Anything else — a chargeback or bank dispute threat, an angry or legal message, damaged/missing items, no matching order for their email, a request you are unsure about, or anything the rules and lessons don't clearly cover → "escalate" and ask the owner a short, specific question. When in doubt, escalate.
 
@@ -50,14 +51,15 @@ const DECIDE_TOOL = {
   description: 'Decide how to handle this customer email.',
   input_schema: {
     type: 'object',
-    required: ['category', 'summary', 'action', 'order_ids', 'purchase_ids', 'tee_size', 'reply', 'question_for_owner', 'confidence'],
+    required: ['category', 'summary', 'action', 'order_ids', 'purchase_ids', 'tee_size', 'email_change_from', 'reply', 'question_for_owner', 'confidence'],
     properties: {
       category: { type: 'string', enum: ['refund_request', 'cancel_subscription', 'access_help', 'shipping_question', 'product_question', 'no_reply_needed', 'other'] },
       summary: { type: 'string', description: 'One line for the owner: who, what they want, key facts.' },
-      action: { type: 'string', enum: ['cancel_subscriptions', 'change_tee_size', 'reply_only', 'no_reply', 'escalate'] },
+      action: { type: 'string', enum: ['cancel_subscriptions', 'change_tee_size', 'change_email', 'reply_only', 'no_reply', 'escalate'] },
       order_ids: { type: 'array', items: { type: 'string' }, description: 'Always empty: the agent never refunds.' },
       purchase_ids: { type: 'array', items: { type: 'string' }, description: 'Every live subscription purchaseId to cancel (cancel_subscriptions), or the tee subscription to resize (change_tee_size).' },
       tee_size: { type: 'string', enum: ['', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'], description: 'change_tee_size only: the size they want. Empty otherwise.' },
+      email_change_from: { type: 'string', description: 'change_email only: the misspelled address their orders are under. Empty otherwise.' },
       reply: { type: 'string', description: 'The full reply to the customer as Maggie, written as if the action has been done. For escalate, the reply you would send if the owner agrees with your suggestion. Empty for no_reply.' },
       question_for_owner: { type: 'string', description: 'For escalate: the specific question and your suggested answer. Otherwise empty.' },
       stop_emails: { type: 'boolean', description: 'True if they asked to stop getting emails / be taken off a list. Turns off all marketing email to them.' },
@@ -79,7 +81,9 @@ const ANSWER_TOOL = {
         items: {
           type: 'object', required: ['type'],
           properties: {
-            type: { type: 'string', enum: ['refund_order', 'partial_refund', 'cancel_purchase', 'change_tee_size'] },
+            type: { type: 'string', enum: ['refund_order', 'partial_refund', 'cancel_purchase', 'change_tee_size', 'change_email'] },
+            from_email: { type: 'string', description: 'change_email: the address the orders are under now (the typo).' },
+            to_email: { type: 'string', description: 'change_email: the address to move them to. Leave empty for the address the customer wrote from.' },
             order_id: { type: 'string' }, purchase_id: { type: 'string' }, amount: { type: 'number' },
             size: { type: 'string', enum: ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'], description: 'change_tee_size: the new size; purchase_id = the tee subscription.' },
           },
@@ -87,7 +91,7 @@ const ANSWER_TOOL = {
       },
       stop_emails: { type: 'boolean', description: 'True if the customer asked to stop getting emails / be taken off a list, or the owner said to. Set after the reply goes out. Do not set again if it was already done.' },
       send_reply: { type: 'boolean', description: 'False only if the owner said not to reply or will reply himself.' },
-      waiting_on_owner: { type: 'boolean', description: 'True if the owner asked for something you have no action for (e.g. linking an order to another email, changing an address, anything done by hand), so it must be done by hand BEFORE the reply goes out. Then set send_reply false, put the full reply to send afterwards in reply, and say in confirmation exactly what the owner must do by hand. The case stays open; the owner answers "done" and the reply is sent.' },
+      waiting_on_owner: { type: 'boolean', description: 'True if the owner asked for something you have no action for (e.g. changing a shipping address, anything done by hand; moving orders to another email is change_email, not by hand), so it must be done by hand BEFORE the reply goes out. Then set send_reply false, put the full reply to send afterwards in reply, and say in confirmation exactly what the owner must do by hand. The case stays open; the owner answers "done" and the reply is sent.' },
       reply: { type: 'string', description: 'Final reply to the customer as Maggie, matching what is actually being done. Use the owner\'s wording/intent; keep Maggie\'s voice and the signature. Only say something was changed if it is in actions; if the owner approved a change you have no action for, set send_reply false and waiting_on_owner true, and tell the owner in confirmation.' },
       lesson: { type: ['string', 'null'], description: 'A reusable rule learned from this answer, phrased as policy for future cases (e.g. "If a customer asks to refund only the subscription bump, refund that order line but keep the stickers"). Null if the answer was a plain yes or only fits this one customer.' },
       confirmation: { type: 'string', description: 'One or two lines telling the owner what will be done.' },

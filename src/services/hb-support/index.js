@@ -22,6 +22,8 @@ const { callTool } = require('./llm');
 const prompt = require('./prompt');
 const address = require('./address');
 const inventory = require('../hb-inventory');
+const shipstation = require('./shipstation');
+const dns = require('dns').promises;
 
 const OWNER = () => (process.env.HB_SUPPORT_ALAN_EMAIL || 'alan@2by4llc.com').toLowerCase();
 const OUR_ADDRESSES = /@(mg\.)?happybakerhq\.com$/i;
@@ -66,15 +68,47 @@ async function accountFor(email, texts) {
     snap.purchases.push(...s.purchases);
     snap.customerIds.push(...s.customerIds.filter((id) => !snap.customerIds.includes(id)));
     snap.name = snap.name || s.name;
+    snap.altEvidence = { ...(snap.altEvidence || {}), [alt]: await typoEvidence(alt, email) };
   }
   return snap;
+}
+
+// Checkout typos (Elaine 11-02: paid as mesteven@comast.net, writes from @comcast.net).
+// Moving orders to the address someone writes from is only automatic when the order's
+// address is a near-miss of it (≤2 edits) AND dead: its domain takes no mail, or our
+// mail to it bounced. Anything else needs the owner, since anyone can name an email.
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[a.length][b.length];
+}
+async function typoEvidence(alt, writer) {
+  const distance = editDistance(alt.toLowerCase(), writer.toLowerCase());
+  let dead = null;
+  try {
+    // A "null MX" (exchange '' / '.', RFC 7505) is how a parked typo domain says no mail (comast.net).
+    const mx = (await dns.resolveMx(alt.split('@')[1])).filter((r) => r.exchange && r.exchange !== '.');
+    if (!mx.length) dead = 'its domain takes no email';
+  } catch (e) { if (/ENOTFOUND|ENODATA/.test(e.code)) dead = 'its domain takes no email'; }
+  if (!dead) { try { if (ghl.bounced(await ghl.contactByEmail(alt))) dead = 'our emails to it bounced'; } catch { /* evidence only */ } }
+  return { distance, dead, typo: distance <= 2 && !!dead };
 }
 
 // ─── account formatting (for prompts and for Alan) ──────────────────────────
 function describeAccount(snap) {
   if (!snap.orders.length) return `No Checkout Champ orders for ${snap.email}.`;
   const lines = [];
-  if ((snap.altEmails || []).length) lines.push(`Orders marked (other email) are under ${snap.altEmails.join(', ')}, an address they gave in their message, not the one they wrote from. On the site they must sign in / create their account with that address.`);
+  if ((snap.altEmails || []).length) {
+    lines.push(`Orders marked (other email) are under ${snap.altEmails.join(', ')}, an address they gave in their message, not the one they wrote from. On the site they must sign in / create their account with that address, unless the orders are moved to the address they wrote from (change_email).`);
+    for (const alt of snap.altEmails) {
+      const ev = (snap.altEvidence || {})[alt];
+      if (ev) lines.push(`  ${alt}: ${ev.distance} character${ev.distance === 1 ? '' : 's'} off from ${snap.email}${ev.dead ? `; ${ev.dead}` : '; looks like a working address'} → ${ev.typo ? 'a checkout TYPO, safe to move' : 'NOT a clear typo (owner must approve a move)'}`);
+    }
+  }
   for (const o of snap.orders) {
     const ship = o.shipped ? 'SHIPPED' : `not shipped (${o.fulfillments.map((f) => f.status).join(', ') || 'digital/no fulfillment'})`;
     lines.push(`Order ${o.orderId}${o.email ? ` (other email ${o.email})` : ''} · ${o.date} · ${o.type} · ${o.status} · ${money(o.total)} (refundable ${money(o.refundRemaining)}) · ${o.card || 'card ?'} · ${ship}`);
@@ -92,6 +126,7 @@ function describePlan(plan, snap) {
     if (a.type === 'refund_order') return `Full refund + cancel order ${a.order_id} (${money(byId.get(a.order_id)?.refundRemaining)})`;
     if (a.type === 'partial_refund') return `Refund ${money(a.amount)} on order ${a.order_id}`;
     if (a.type === 'change_tee_size') return `Change tee to size ${a.size}: subscription ${a.purchase_id} + any unshipped tee`;
+    if (a.type === 'change_email') return `Move customer ${a.customer_id} + order ${a.order_ids.join(', ')} from ${a.from_email} to ${a.to_email} (CoC, GHL contact, unshipped ShipStation orders)`;
     return `Cancel subscription ${a.purchase_id}`;
   });
   if (plan.stopEmails) parts.push('Stop all emails to them (GHL email DND)');
@@ -107,7 +142,10 @@ function planFor(decision, snap) {
   const actions = [];
   let action = decision.action;
 
-  if (action === 'refund_unshipped' || decision.order_ids.length) {
+  if (action === 'change_email') {
+    const r = emailChangeAction(decision.email_change_from, snap.email, snap);
+    if (r.problem) problems.push(r.problem); else actions.push(r.action);
+  } else if (action === 'refund_unshipped' || decision.order_ids.length) {
     problems.push('the agent never refunds; refunds are owner-only');
   } else if (action === 'cancel_subscriptions') {
     for (const id of decision.purchase_ids) {
@@ -132,8 +170,32 @@ function planFor(decision, snap) {
 
   if (problems.length) action = 'escalate';
   const refundTotal = actions.filter((a) => a.type === 'refund_order').reduce((s, a) => s + orders.get(a.order_id).refundRemaining, 0);
-  const autoOk = action !== 'escalate' && Number(decision.confidence) >= 0.75 && refundTotal <= AUTO_REFUND_MAX() && !(snap.altEmails || []).length;
+  // Orders under a typed address are never auto-handled, except moving them off a clear typo.
+  const altOk = !(snap.altEmails || []).length || (action === 'change_email' && actions.every((a) => ((snap.altEvidence || {})[a.from_email] || {}).typo));
+  const autoOk = action !== 'escalate' && Number(decision.confidence) >= 0.75 && refundTotal <= AUTO_REFUND_MAX() && altOk;
   return { action, actions: action === 'escalate' ? [] : actions, proposedActions: actions, problems, refundTotal, autoOk, stopEmails: !!decision.stop_emails };
+}
+
+// Move every order under `from` (one CoC customer) to `to`.
+function emailChangeAction(from, to, snap) {
+  from = String(from || '').trim().toLowerCase(); to = String(to || '').trim().toLowerCase();
+  if (!from || !to || from === to) return { problem: 'no other email named to move the orders from' };
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) return { problem: `${to} is not a valid email` };
+  const orders = snap.orders.filter((o) => o.email === from);
+  if (!orders.length) return { problem: `no orders under ${from}` };
+  const customerIds = [...new Set(orders.map((o) => o.customerId))];
+  if (customerIds.length !== 1) return { problem: `orders under ${from} belong to ${customerIds.length} customers` };
+  return { action: { type: 'change_email', from_email: from, to_email: to, customer_id: customerIds[0], order_ids: orders.map((o) => o.orderId) } };
+}
+
+// The owner can name a typo address the customer never typed: load its orders too.
+async function loadNamedAlts(snap, actions) {
+  for (const a of actions || []) {
+    const from = String(a.from_email || '').toLowerCase();
+    if (a.type !== 'change_email' || !from || snap.orders.some((o) => o.email === from)) continue;
+    const s = await coc.snapshot(from);
+    snap.orders.push(...s.orders.map((o) => ({ ...o, email: from })));
+  }
 }
 
 // Owner-directed actions: same ownership checks, but shipped orders are allowed.
@@ -158,6 +220,9 @@ function checkOwnerActions(list, snap) {
       else if (!coc.TEE_PRODUCT_IDS.has(p.productId)) problems.push(`subscription ${a.purchase_id} is not a tee`);
       else if (!coc.TEE_SIZES[a.size]) problems.push(`unknown tee size ${a.size}`);
       else ok.push(a);
+    } else if (a.type === 'change_email') {
+      const r = emailChangeAction(a.from_email, a.to_email || snap.email, snap);
+      if (r.problem) problems.push(r.problem); else ok.push(r.action);
     }
   }
   return { ok, problems };
@@ -168,13 +233,14 @@ async function execute(c, actions) {
   const reason = `Customer request (${tag(c.id)})`;
   const results = [];
   for (const a of actions) {
-    const key = `${a.type}:${a.order_id || a.purchase_id}:${a.amount || a.size || ''}`;
+    const key = `${a.type}:${a.order_id || a.purchase_id || a.from_email}:${a.amount || a.size || a.to_email || ''}`;
     if (c.executed.some((e) => e.key === key && e.ok)) continue;
     let ok = true, message;
     try {
       if (a.type === 'refund_order') message = await coc.refundOrder(a.order_id, reason);
       else if (a.type === 'partial_refund') message = await coc.partialRefund(a.order_id, a.amount, reason);
       else if (a.type === 'change_tee_size') message = await coc.changeTeeSize(a.purchase_id, a.size, unshippedTees(c.snapshot, a.purchase_id, a.size));
+      else if (a.type === 'change_email') message = await changeEmail(c, a);
       else message = await coc.cancelPurchase(a.purchase_id, reason);
     } catch (e) {
       message = e.message;
@@ -186,11 +252,28 @@ async function execute(c, actions) {
   }
   const done = results.filter((r) => r.ok).map((r) => (r.type === 'cancel_purchase' ? `cancelled subscription ${r.purchase_id}`
     : r.type === 'change_tee_size' ? `tee size → ${r.size} (${r.message})`
+    : r.type === 'change_email' ? `email ${r.from_email} → ${r.to_email}`
     : `${r.type === 'partial_refund' ? `refunded ${money(r.amount)} on` : 'refunded + cancelled'} order ${r.order_id}`));
   for (const customerId of (c.snapshot.customerIds || []).slice(0, 1)) {
     if (done.length) await coc.addNote(customerId, `HB support agent ${tag(c.id)}: ${done.join('; ')}.`).catch((e) => console.warn('[hb-support] note failed:', e.message));
   }
   return results;
+}
+
+// CoC is what grants site access, so it must succeed; GHL and ShipStation are tidy-up,
+// reported but not fatal.
+async function changeEmail(c, a) {
+  const parts = [await coc.changeEmail(a.customer_id, a.order_ids, a.to_email)];
+  if (c.contactId && c.email === a.to_email) {
+    try { parts.push(await ghl.mergeContactInto(a.from_email, c.contactId)); } catch (e) { parts.push(`GHL merge FAILED (${e.response ? e.response.status : e.message}), fix by hand`); }
+  }
+  if (process.env.SHIPSTATION_API_KEY) {
+    for (const orderId of a.order_ids) {
+      try { const ids = await shipstation.setEmail(orderId, a.to_email); if (ids.length) parts.push(`ShipStation ${ids.join(', ')} updated`); }
+      catch (e) { parts.push(`ShipStation ${orderId} FAILED (${e.response ? e.response.status : e.message})`); }
+    }
+  }
+  return parts.join('; ');
 }
 
 // The tee items of this subscription still sitting in an unshipped fulfillment, minus any
@@ -214,7 +297,7 @@ function unshippedTees(snap, purchaseId, size) {
 // behind it (the agent had none for sizes), so the size never changed. Each first-person
 // "I've …" sentence is checked against the action types that can back its verb.
 const CLAIMS = [
-  [/\b(updat|chang|switch|swapp|correct|fix|replac)ed\b/i, ['change_tee_size']],
+  [/\b(updat|chang|switch|swapp|correct|fix|replac|link|mov)ed\b/i, ['change_tee_size', 'change_email']],
   [/\brefund(ed)?\b/i, ['refund_order', 'partial_refund']],
   [/\bcancel+ed\b/i, ['cancel_purchase', 'refund_order']],
 ];
@@ -328,7 +411,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
     const failed = c.results.filter((r) => !r.ok);
     if (failed.length) {
       c.status = 'awaiting_owner';
-      await emailOwner(c, `Problem: ${c.decision.summary}`, `I tried to handle this and Checkout Champ refused part of it:\n${failed.map((f) => `${f.type} ${f.order_id || f.purchase_id}: ${f.message}`).join('\n')}\n\nNo reply has gone to the customer yet. Tell me what to do.\n\n${proposalEmail(c)}`);
+      await emailOwner(c, `Problem: ${c.decision.summary}`, `I tried to handle this and Checkout Champ refused part of it:\n${failed.map((f) => `${f.type} ${f.order_id || f.purchase_id || f.from_email}: ${f.message}`).join('\n')}\n\nNo reply has gone to the customer yet. Tell me what to do.\n\n${proposalEmail(c)}`);
       return c;
     }
     const claims = unbackedClaims(c.decision.reply, doneActions(c), c.snapshot);
@@ -340,7 +423,8 @@ async function handleCustomer(conv, batch, { dryRun }) {
     await replyToCustomer(c, c.decision.reply);
     if (c.plan.stopEmails) await stopEmails(c);
     c.status = 'done';
-    await emailOwner(c, `Done: ${c.decision.summary}`, `Handled automatically.\n\n${describePlan(c.plan, snapshot)}\n\nReply sent as Maggie:\n${c.decision.reply}\n\nIf this was wrong, reply and tell me what to do; I'll fix it and remember.\n\n${customerBlock(c)}\n\nGHL conversation: ${ghl.link(c.conversationId)}`);
+    const extra = c.results.filter((r) => r.type === 'change_email').map((r) => `Result: ${r.message}`).join('\n');
+    await emailOwner(c, `Done: ${c.decision.summary}`, `Handled automatically.\n\n${describePlan(c.plan, snapshot)}${extra ? `\n${extra}` : ''}\n\nReply sent as Maggie:\n${c.decision.reply}\n\nIf this was wrong, reply and tell me what to do; I'll fix it and remember.\n\n${customerBlock(c)}\n\nGHL conversation: ${ghl.link(c.conversationId)}`);
     return c;
   }
 
@@ -402,6 +486,7 @@ async function handleOwner(msg) {
     });
   }
 
+  await loadNamedAlts(c.snapshot, out.actions);
   const { ok, problems } = checkOwnerActions(out.actions, c.snapshot);
   const results = await execute(c, ok);
   const failed = results.filter((r) => !r.ok);
@@ -419,7 +504,7 @@ async function handleOwner(msg) {
   const lines = [out.confirmation];
   if (held) lines.push(`I did NOT send the reply: it says "${claims.join(' / ')}", but nothing I did makes that true. Make the change by hand and reply "done", and I'll send it. Or tell me what to do instead.`);
   if (waiting) lines.push(`This case stays open. When the change is made, reply "done" and I'll send this reply:\n${out.reply}`);
-  for (const r of results) lines.push(`${r.ok ? 'Done' : 'FAILED'}: ${r.type} ${r.order_id || r.purchase_id}${r.amount ? ` ${money(r.amount)}` : ''}${r.size ? ` → ${r.size}` : ''}${r.ok && r.type !== 'change_tee_size' ? '' : ` (${r.message})`}`);
+  for (const r of results) lines.push(`${r.ok ? 'Done' : 'FAILED'}: ${r.type} ${r.order_id || r.purchase_id || r.from_email}${r.amount ? ` ${money(r.amount)}` : ''}${r.size ? ` → ${r.size}` : ''}${r.to_email ? ` → ${r.to_email}` : ''}${r.ok && !['change_tee_size', 'change_email'].includes(r.type) ? '' : ` (${r.message})`}`);
   if (stopped) lines.push('Done: stopped all emails to them (GHL email DND)');
   if (problems.length) lines.push(`Skipped: ${problems.join('; ')}`);
   lines.push(out.send_reply && !failed.length && !held ? `Reply sent to ${c.email}:\n${out.reply}` : failed.length ? 'No reply sent because something failed. Tell me how to proceed.' : held ? `Held reply:\n${out.reply}` : waiting ? null : 'No reply sent.');
@@ -555,7 +640,8 @@ async function actOnCase(caseId, actions) {
     loadAll();
     const c = cases[caseId];
     if (!c) throw new Error(`unknown case ${caseId}`);
-    c.snapshot = await coc.snapshot(c.email);
+    c.snapshot = await accountFor(c.email, (c.messages || []).map((m) => m.text));
+    await loadNamedAlts(c.snapshot, actions);
     const { ok, problems } = checkOwnerActions(actions, c.snapshot);
     const results = await execute(c, ok);
     if (ok.length && results.every((r) => r.ok) && !problems.length) c.status = 'done';

@@ -103,4 +103,31 @@ async function contactIdFor(email, firstName = 'Alan', lastName = '') {
   return up.data.contact.id;
 }
 
-module.exports = { recentConversations, getConversation, getMessages, emailMessage, sendEmail, stopEmails, contactIdFor, link, render, htmlToText };
+// The contact (if any) for an exact email, with its DND state.
+async function contactByEmail(email) {
+  const r = await http().get('/contacts/search/duplicate', { params: { locationId: loc(), email } });
+  const id = r.data.contact && r.data.contact.id;
+  return id ? (await http().get(`/contacts/${id}`)).data.contact : null;
+}
+// GHL sets email DND with a "Permanent Bounce…" message when our mail to an address bounces.
+const bounced = (c) => !!c && /bounce/i.test(JSON.stringify((c.dndSettings || {}).Email || {}));
+
+// After a checkout-typo fix: fold the typo-address contact (buyer tags, opportunity) into
+// the contact the customer writes from, then delete it. The phone goes on last because
+// the location blocks duplicate phones (Lorretta 10-24).
+async function mergeContactInto(oldEmail, keepId) {
+  const old = await contactByEmail(oldEmail);
+  if (!old || old.id === keepId) return 'no separate GHL contact';
+  if ((old.tags || []).length) await http().post(`/contacts/${keepId}/tags`, { tags: old.tags });
+  const opps = (await http().get('/opportunities/search', { params: { location_id: loc(), contact_id: old.id } })).data.opportunities || [];
+  for (const o of opps) await http().put(`/opportunities/${o.id}`, { contactId: keepId });
+  await http().delete(`/contacts/${old.id}`);
+  const keep = (await http().get(`/contacts/${keepId}`)).data.contact || {};
+  const patch = {};
+  if (old.phone && !keep.phone) patch.phone = old.phone;
+  if (bounced(keep)) patch.dndSettings = { Email: { status: 'inactive' } };
+  if (Object.keys(patch).length) await http().put(`/contacts/${keepId}`, patch);
+  return `GHL: ${(old.tags || []).length} tags + ${opps.length} opportunity moved, typo contact deleted`;
+}
+
+module.exports = { contactByEmail, bounced, mergeContactInto, recentConversations, getConversation, getMessages, emailMessage, sendEmail, stopEmails, contactIdFor, link, render, htmlToText };
