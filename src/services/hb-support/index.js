@@ -55,9 +55,18 @@ const mode = () => (state && state.mode) || process.env.HB_SUPPORT_MODE || 'appr
 // Look up any other address they give in their messages and merge those orders in,
 // flagged, so Alan can see them. Orders from an address someone merely typed are never
 // auto-handled (anyone can name an email), see planFor.
-async function accountFor(email, texts) {
+async function accountFor(email, texts, fromName = '') {
   const snap = await coc.snapshot(email);
-  const others = [...new Set((texts.join('\n').match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).map((x) => x.toLowerCase()))]
+  const typed = [...new Set((texts.join('\n').match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).map((x) => x.toLowerCase()))];
+  // No paid order under their own address: the paid one is often under a checkout typo
+  // they don't know about (Deziray 10-27, Elaine 11-02). Look their name up and keep
+  // addresses ≤2 characters off theirs.
+  if (!snap.orders.some((o) => o.status === 'COMPLETE')) {
+    const [first, ...rest] = String(snap.name || fromName || '').trim().split(/\s+/);
+    try { typed.push(...(await coc.emailsForName(first, rest.join(' '))).filter((x) => editDistance(x, email.toLowerCase()) <= 2)); }
+    catch (e) { console.warn('[hb-support] name lookup failed:', e.message); }
+  }
+  const others = [...new Set(typed)]
     .filter((x) => x !== email.toLowerCase() && x !== OWNER() && !OUR_ADDRESSES.test(x) && !AUTOMATED_SENDERS.test(x)).slice(0, 3);
   snap.altEmails = [];
   for (const alt of others) {
@@ -103,7 +112,7 @@ function describeAccount(snap) {
   if (!snap.orders.length) return `No Checkout Champ orders for ${snap.email}.`;
   const lines = [];
   if ((snap.altEmails || []).length) {
-    lines.push(`Orders marked (other email) are under ${snap.altEmails.join(', ')}, an address they gave in their message, not the one they wrote from. On the site they must sign in / create their account with that address, unless the orders are moved to the address they wrote from (change_email).`);
+    lines.push(`Orders marked (other email) are under ${snap.altEmails.join(', ')}: an address they gave in their message, or a near-identical address found under their name. Not the one they wrote from. On the site they must sign in / create their account with that address, unless the orders are moved to the address they wrote from (change_email).`);
     for (const alt of snap.altEmails) {
       const ev = (snap.altEvidence || {})[alt];
       if (ev) lines.push(`  ${alt}: ${ev.distance} character${ev.distance === 1 ? '' : 's'} off from ${snap.email}${ev.dead ? `; ${ev.dead}` : '; looks like a working address'} → ${ev.typo ? 'a checkout TYPO, safe to move' : 'NOT a clear typo (owner must approve a move)'}`);
@@ -393,7 +402,7 @@ async function handleCustomer(conv, batch, { dryRun }) {
     return { case: open.id, followUp: true };
   }
 
-  const snapshot = await accountFor(last.from, batch.map((b) => b.text));
+  const snapshot = await accountFor(last.from, batch.map((b) => b.text), last.fromName || conv.fullName || '');
   const c = {
     id: dryRun ? 0 : state.nextId++, status: 'new', createdAt: new Date().toISOString(),
     conversationId: conv.id, contactId: conv.contactId, email: last.from,

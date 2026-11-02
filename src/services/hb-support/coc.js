@@ -129,4 +129,13 @@ async function changeEmail(customerId, orderIds, email) {
   return `customer ${customerId} + order ${orderIds.join(', ')} now ${email}`;
 }
 
-module.exports = { snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, changeEmail, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };
+// Every order under this first + last name (CoC matches names as substrings: "Stevens"
+// also returns Stevenson, so filter exactly here).
+async function emailsForName(first, last) {
+  if (!first || !last) return [];
+  const norm = (x) => String(x || '').trim().toLowerCase();
+  const rows = await query('order/query', { firstName: first, lastName: last, campaignId: process.env.HB_COC_CAMPAIGN_ID || '15' });
+  return [...new Set(rows.filter((o) => norm(o.firstName) === norm(first) && norm(o.lastName) === norm(last)).map((o) => norm(o.emailAddress)).filter(Boolean))];
+}
+
+module.exports = { emailsForName, snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, changeEmail, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };
