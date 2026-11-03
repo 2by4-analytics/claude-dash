@@ -73,7 +73,9 @@ async function snapshot(email) {
 
 const refundOrder = (orderId, reason) => write('order/cancel', { orderId, cancelReason: reason.slice(0, 100), fullRefund: 'true' });
 const partialRefund = (orderId, amount, reason) => write('order/refund', { orderId, refundAmount: Number(amount).toFixed(2), refundReason: reason });
-const cancelPurchase = (purchaseId, reason) => write('purchase/cancel', { purchaseId, cancelReason: reason.slice(0, 100), cancelFulfillment: 'true' });
+// cancelFulfillment OFF: stops future rebills only. The original order (sticker + the $1 Last
+// Month Sticker) still ships. With it on, CoC also cancelled the Last Month Sticker (Alan, 11-03).
+const cancelPurchase = (purchaseId, reason) => write('purchase/cancel', { purchaseId, cancelReason: reason.slice(0, 100), cancelFulfillment: 'false' });
 const addNote = (customerId, message) => write('customer/addnote', { customerId, message: message.slice(0, 500) });
 
 // Happy Baker Monthly Tee, one campaign product per size (same $18 → $26.95 + $5 cycles;
