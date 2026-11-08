@@ -7,6 +7,8 @@ Products (Checkout Champ product id: what it is):
 - 245: 1 Verified Happy Baker Sticker ($3 + $1 s&h, ships)
 - 319: 1 Verified Happy Baker Sticker ($3, free shipping, ships). Same sticker as 245; it is the free-shipping side of an /Approved split test
 - 249: 3 Verified Happy Baker Stickers + Bonus ($7.98, ships)
+- 345: 1 Verified Happy Baker Sticker ($5 + $1 s&h, ships). Same sticker as 245; it is the higher-price side of an /Approved split test
+- 347: 3 Verified Happy Baker Stickers ($9.95, free shipping, ships). Same stickers as 249; it is the higher-price side of an /Approved split test
 - 247: "Last Month Sticker + Monthly Stickers": $1 today, then a MONTHLY sticker subscription at $14.95/month (purchase shows as TRIAL until the first full bill)
 - 255: "Recipe & Baking Planner (Free) + Happy Baker Monthly Kit": the planner is free, the Monthly Kit is a $25/month subscription
 - 251 / 281 / 291: Kitchen Planner + Recipe Library ($7 add-on or $14) — DIGITAL, never ships
