@@ -47,6 +47,8 @@ const PRODUCT_TAGS = [
   // Rolling Pin design, one-time shop tee on happybakerhq.com (not the funnel's Monthly Tee,
   // so it stays out of 'hb tee' and the Bought Tee stage).
   [[321, 323, 325, 327, 329, 331, 333], 'hb rolling pin tee'],
+  // Good Things Take Butter design (cream), one-time shop tee, same treatment as Rolling Pin.
+  [[349, 351, 353, 355, 357, 359, 361], 'hb butter tee'],
   [[279, 289], 'hb tumbler'],
   [[335], 'hb silicone mat'],
   // Christmas cookie cutter sets (2026-11-01): Classic, Whimsy, North Pole Magic, Ultimate 15.

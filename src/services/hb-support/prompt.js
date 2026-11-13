@@ -7,8 +7,8 @@ Products (Checkout Champ product id: what it is):
 - 245: 1 Verified Happy Baker Sticker ($3 + $1 s&h, ships)
 - 319: 1 Verified Happy Baker Sticker ($3, free shipping, ships). Same sticker as 245; it is the free-shipping side of an /Approved split test
 - 249: 3 Verified Happy Baker Stickers + Bonus ($7.98, ships)
-- 345: 1 Verified Happy Baker Sticker ($5 + $1 s&h, ships). Same sticker as 245; it is the higher-price side of an /Approved split test
-- 347: 3 Verified Happy Baker Stickers ($9.95, free shipping, ships). Same stickers as 249; it is the higher-price side of an /Approved split test
+- 345: 1 Verified Happy Baker Sticker ($5 + $1 s&h, ships). Same sticker as 245; it was the higher-price side of an /Approved split test (ended 11-10, no new orders)
+- 347: 3 Verified Happy Baker Stickers ($9.95, free shipping, ships). Same stickers as 249; it was the higher-price side of an /Approved split test (ended 11-10, no new orders)
 - 247: "Last Month Sticker + Monthly Stickers": $1 today, then a MONTHLY sticker subscription at $14.95/month (purchase shows as TRIAL until the first full bill)
 - 255: "Recipe & Baking Planner (Free) + Happy Baker Monthly Kit": the planner is free, the Monthly Kit is a $25/month subscription
 - 251 / 281 / 291: Kitchen Planner + Recipe Library ($7 add-on or $14) — DIGITAL, never ships
@@ -18,6 +18,7 @@ Products (Checkout Champ product id: what it is):
 - 283, 285, 287, 295, 297, 299: Product Tester offer claims (keychain, earrings, silicone baking mat, tumbler at $14.95 tester price), small shipping charge
 - 257 S / 259 M / 261 L / 263 XL / 265 2XL / 267 3XL / 269 4XL: "Happy Baker Monthly Tee" — $18 today, then a MONTHLY tee subscription ($26.95 + $5 s&h; 2XL $27.95, 3XL/4XL $28.95). The size is in the product name, e.g. "Happy Baker Monthly Tee (XL)".
 - 321 S / 323 M / 325 L / 327 XL / 329 2XL / 331 3XL / 333 4XL: "Baking Is My Happy Place Tee - Rolling Pin", a ONE-TIME tee bought in the shop on happybakerhq.com ($26.95; 2XL $27.95, 3XL/4XL $28.95; + $5 s&h). A different design from the Monthly Tee, with no subscription. A size change on it is NOT change_tee_size (that only works on the Monthly Tee subscription): escalate so staff can fix the order.
+- 349 S / 351 M / 353 L / 355 XL / 357 2XL / 359 3XL / 361 4XL: "Good Things Take Butter Tee - Cream", a ONE-TIME tee bought in the shop on happybakerhq.com ($26.95; 2XL $27.95, 3XL/4XL $28.95; + $5 s&h). A different design from the Rolling Pin tee and the Monthly Tee, with no subscription. A size change on it is NOT change_tee_size (that only works on the Monthly Tee subscription): escalate so staff can fix the order.
 Any order whose fulfillment status is SHIPPED/DELIVERED (or has a tracking number) has shipped. HOLD/PENDING/CANCELLED = not shipped yet.
 
 Site access: buying does NOT create a website login. To claim Product Tester offers or open the planner, the customer goes to happybakerhq.com/community/product-tester (or /planner), chooses "Create Account" and uses the SAME email they ordered with, then confirms the email we send. If a confirmation link says it expired, they sign in and tap "Send it again". If they signed up with a different email, their order can be moved to it (see rule 4d).
