@@ -262,13 +262,16 @@ async function handleReply(batch, { sendOwner, replyAsMaggie }) {
     if (live.length) subs = `They have ${live.length} live subscription${live.length > 1 ? 's' : ''} (${live.map((p) => p.product).join('; ')}). Update the shipping address in CoC too, or the monthly shipments go to the old address.`;
   } catch (e) { subs = `(Couldn't check CoC subscriptions: ${e.message})`; }
 
-  const others = recs.length > 1 ? `They also have ${recs.length - 1} other cancelled order(s) waiting on an address: ${recs.slice(1).map((o) => o.orderNumber).join(', ')}. The same address probably applies.` : '';
+  const twins = recs.slice(1).filter((o) => o.orderNumber === r.orderNumber);
+  const rest = recs.slice(1).filter((o) => o.orderNumber !== r.orderNumber);
+  const others = rest.length ? `They also have ${rest.length} other cancelled order(s) waiting on an address: ${rest.map((o) => o.orderNumber).join(', ')}. The same address probably applies.` : '';
+  const twinNote = twins.length ? `Order ${r.orderNumber} is split across ${twins.length + 1} ShipStation stores (ids ${[r, ...twins].map((o) => o.ssOrderId).join(', ')}); this address covers all of them.` : '';
   await sendOwner(`[${tag('FIX')}] ${r.shipTo.name}: ${x.kind === 'confirms_existing' ? 'address confirmed as is' : 'new address'} for order ${r.orderNumber}`, [
     `NEW LABEL ADDRESS (order ${r.orderNumber}, cancelled in ShipStation)\n${addressLines(fresh)}${r.shipTo.phone ? `\n${r.shipTo.phone}` : ''}`,
     `OLD ADDRESS\n${addressLines(r.shipTo)}`,
     `WHAT THEY WROTE\n${said.slice(0, 1500)}`,
     x.other_request ? `THEY ALSO ASKED: ${x.other_request}\n(I haven't acted on that; handle it in GHL.)` : '',
-    subs, others,
+    subs, twinNote, others,
   ].filter(Boolean).join('\n\n'));
 
   await replyAsMaggie(r, [
@@ -279,6 +282,11 @@ async function handleReply(batch, { sendOwner, replyAsMaggie }) {
     SIGNATURE,
   ].join('\n\n'), batch[batch.length - 1].id);
   r.ackSentAt = new Date().toISOString(); r.status = 'sent_to_owner';
+  // One CoC order split across HB stores (shirt + kit) is two ShipStation orders with the
+  // same number: the reply answers both, so the twin must not get Maggie's reminder (Dianne Malloy, 11-11).
+  for (const twin of recs.slice(1).filter((o) => o.orderNumber === r.orderNumber)) {
+    Object.assign(twin, { status: 'sent_to_owner', newAddress: fresh, reply: r.reply, ackSentAt: r.ackSentAt, twinOf: r.ssOrderId });
+  }
   save();
   return true;
 }
