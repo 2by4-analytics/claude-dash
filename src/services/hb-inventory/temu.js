@@ -228,6 +228,60 @@ async function writeSheet(tab, rows) {
   return values.length - 1;
 }
 
+// ─── Shipsem's own tracking sheet ────────────────────────────────────────────
+// Alan's "Shipsem Tracking" sheet (same columns) is hand-kept, so it is never rewritten:
+// rows already there only get Package/Carrier/Tracking/Shipped/Status/In Ledger filled
+// or refreshed (Item, Qty and Notes stay as typed), and orders placed on or after
+// SHIPSEM_SINCE that aren't in it are appended. Alan handed it over current on 11-17.
+const SHIPSEM_ID = () => process.env.HB_SHIPSEM_SHEET_ID || '1mnCQmu8XjcOAZ7Rate0S6iTV3gI31NqC5Dy0qd-ZV7A';
+const SHIPSEM_SINCE = '2026-11-17';
+const SHIPSEM_URL = () => `https://docs.google.com/spreadsheets/d/${SHIPSEM_ID()}/edit`;
+const bare = (t) => String(t || '').replace(/[="]/g, '').trim();
+
+function rowValues(r) {
+  return [r.po, r.ordered, r.pkg, r.carrier || '', r.tracking ? `="${r.tracking}"` : '', r.item.name || '', r.item.variant || '', r.item.seller || '',
+    r.item.qty ?? '', r.shipped || '', r.status, r.ledger, ''];
+}
+
+async function syncShipsem(rows, write) {
+  const id = SHIPSEM_ID();
+  const meta = await sheets().spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties' });
+  const tab = meta.data.sheets[0].properties.title;
+  const cur = (await sheets().spreadsheets.values.get({ spreadsheetId: id, range: `'${tab}'!A1:M2000`, valueRenderOption: 'FORMATTED_VALUE' })).data.values || [];
+  const h = (cur[0] || []).map((x) => String(x).trim());
+  const c = Object.fromEntries(HEADER.map((n) => [n, h.indexOf(n)]));
+  if (c['Order #'] < 0 || c['Tracking #'] < 0) throw new Error('Shipsem sheet has no "Order #" / "Tracking #" header');
+  const sheetRows = cur.slice(1).map((r, i) => ({ r, line: i + 2 }));
+  const L = (i) => String.fromCharCode(65 + i);
+  const updates = [], appended = [], used = new Set(), placeholder = new Set();
+  const set = (line, name, val) => { if (c[name] >= 0) updates.push({ range: `'${tab}'!${L(c[name])}${line}`, values: [[val]] }); };
+  const get = (s, name) => (c[name] >= 0 ? String(s.r[c[name]] ?? '').trim() : '');
+  for (const r of rows) {
+    const mine = sheetRows.filter((s) => get(s, 'Order #') === r.po && !used.has(s.line));
+    let hit = r.tracking ? mine.find((s) => bare(get(s, 'Tracking #')) === r.tracking) : mine.find((s) => !bare(get(s, 'Tracking #')));
+    // An order that was "not shipped" in the sheet: its blank row takes the first package.
+    if (!hit && r.tracking) hit = mine.find((s) => !bare(get(s, 'Tracking #')));
+    if (hit) {
+      used.add(hit.line);
+      if (r.tracking && !bare(get(hit, 'Tracking #'))) {
+        set(hit.line, 'Package', r.pkg); set(hit.line, 'Carrier', r.carrier || ''); set(hit.line, 'Tracking #', `="${r.tracking}"`);
+        // A split order: the placeholder row becomes package 1 (its qty), the other packages get appended.
+        if (!/^1 of 1$/.test(r.pkg)) { set(hit.line, 'Qty', r.item.qty ?? ''); placeholder.add(r.po); }
+      }
+      if (r.shipped && !get(hit, 'Shipped')) set(hit.line, 'Shipped', r.shipped);
+      if (r.status && get(hit, 'Status') !== r.status) set(hit.line, 'Status', r.status);
+      if (r.ledger && get(hit, 'In Ledger') !== r.ledger) set(hit.line, 'In Ledger', r.ledger);
+      continue;
+    }
+    if ((r.ordered >= SHIPSEM_SINCE || placeholder.has(r.po)) && !sheetRows.some((s) => get(s, 'Order #') === r.po && bare(get(s, 'Tracking #')) === r.tracking)) appended.push(r);
+  }
+  if (write && updates.length) await sheets().spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: 'USER_ENTERED', data: updates } });
+  if (write && appended.length) {
+    await sheets().spreadsheets.values.append({ spreadsheetId: id, range: `'${tab}'!A1`, valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', requestBody: { values: appended.map(rowValues) } });
+  }
+  return { url: SHIPSEM_URL(), updatedCells: updates.length, changes: updates.map((u) => `${u.range.split('!')[1]}=${u.values[0][0]}`), appended: appended.map((r) => `${r.po} ${r.pkg || ''} ${r.item.qty ?? ''} × ${r.item.name || ''}`.replace(/\s+/g, ' ')) };
+}
+
 // ─── run ─────────────────────────────────────────────────────────────────────
 // ledgerInventory: the Ledger's Inventory rows (to flag POs nobody logged). write=false = dry run.
 let running = null;
@@ -285,6 +339,8 @@ async function doSync({ ledgerInventory = null, write = true } = {}) {
   const sheet = await readSheet();
   for (const r of rows) r.note = sheet.notes.get(noteKey(r.po, r.tracking)) || '';
   const written = write ? await writeSheet(sheet.tab, rows) : 0;
+  let shipsem;
+  try { shipsem = await syncShipsem(rows, write); } catch (e) { errors.push(`Shipsem sheet: ${e.message}`); shipsem = { error: e.message }; }
 
   // Deliveries the 3PL hasn't been told about yet (new since the last run).
   const seen = new Set(state.delivered);
@@ -296,7 +352,7 @@ async function doSync({ ledgerInventory = null, write = true } = {}) {
   const units = (list) => list.reduce((s, r) => s + (Number(r.item.qty) || 0), 0);
   const inTransit = rows.filter((r) => r.tracking && !r.delivered);
   return {
-    sheetUrl: SHEET_URL(), newEmails: fresh.length, written, errors,
+    sheetUrl: SHEET_URL(), newEmails: fresh.length, written, errors, shipsem,
     packages: pkgs.length,
     delivered: pkgs.filter((r) => r.delivered).length,
     inTransit: [...new Map(inTransit.map((r) => [r.tracking, r])).values()].map((r) => ({ po: r.po, tracking: r.tracking, carrier: r.carrier, status: r.status, units: units(inTransit.filter((x) => x.tracking === r.tracking)), item: r.item.name })),
@@ -310,4 +366,4 @@ async function doSync({ ledgerInventory = null, write = true } = {}) {
   };
 }
 
-module.exports = { syncTemu, emailImages, _parse: parse, _build: build };
+module.exports = { syncTemu, emailImages, _parse: parse, _build: build, _syncShipsem: syncShipsem };
