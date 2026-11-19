@@ -115,6 +115,7 @@ To add a sticker/shed client: add object to `CLIENTS` JSON array → redeploy.
 | `POST /api/hb/support/act` | Body `{ caseId, actions: [{ type: 'change_tee_size', purchase_id, size }] }` — run owner-approved actions on a case through the same checks + CoC calls, with NO customer reply and NO owner email (staff fixes from Claude Code). 400 if the agent is mid-run |
 | `POST /api/hb/support/mode?mode=approve\|auto\|off` | Switch the agent's mode (Alan can also email `agent: auto` etc.) |
 | `GET /api/hb/support/address` | Bad-address flow: mode, batches, every flagged ShipStation order + its status |
+| `POST /api/hb/support/address/close` | Body `{ orders: [orderNumber…], note }` — mark bad-address records `fixed` with no emails (staff close-out). 409 if the agent is mid-run |
 | `GET /api/hb/support/address/preview` | Read-only: HB ShipStation orders flagged right now + whether they're past the grace period |
 | `GET /api/hb/inventory/status` | HB inventory agent: last run, recent reports, log of Alan's replies + what they changed |
 | `GET /api/hb/inventory/forecast` | Fresh forecast JSON (nothing sent). The HB dashboard's Inventory tab pulls it on every refresh |

@@ -683,6 +683,11 @@ function supportStatus() {
 
 // Close cases by hand with no emails (cleanup of error cases; the email route sends
 // Alan a "Done" per case). Refused mid-run so the run's saveAll can't overwrite it.
+function closeAddressOrders(orders, note) {
+  if (running) throw new Error('agent is mid-run, try again in a minute');
+  return address.closeOrders(orders, note);
+}
+
 function closeCases(ids) {
   if (running) throw new Error('agent is mid-run, try again in a minute');
   loadAll();
@@ -718,4 +723,4 @@ function setMode(next) {
   return mode();
 }
 
-module.exports = { addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, actOnCase, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount, _unbackedClaims: unbackedClaims, _unshippedTees: unshippedTees };
+module.exports = { closeAddressOrders, addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, actOnCase, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount, _unbackedClaims: unbackedClaims, _unshippedTees: unshippedTees };

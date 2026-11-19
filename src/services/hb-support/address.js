@@ -354,6 +354,21 @@ function addressStatus() {
   return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, followupSentAt: r.followupSentAt || null, urgentSentAt: r.urgentSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
 }
 
+// Staff close-out (Alan 11-19): mark records done by order number, no emails.
+function closeOrders(orderNumbers, note) {
+  load();
+  const want = new Set(orderNumbers.map(String));
+  const closed = [], skipped = [];
+  for (const r of Object.values(st.orders)) {
+    if (!want.has(String(r.orderNumber))) continue;
+    if (r.status === 'fixed') { skipped.push(`${r.orderNumber} already fixed`); continue; }
+    Object.assign(r, { status: 'fixed', fixedNote: note || 'closed by staff', closedAt: new Date().toISOString() });
+    closed.push(`${r.orderNumber} ${r.shipTo.name}`);
+  }
+  save();
+  return { closed, skipped };
+}
+
 // Read-only preview of what the scan would find right now.
 async function previewScan() {
   const orders = (await ss.awaitingShipment()).filter(ss.isHb).filter(ss.badAddress);
@@ -361,4 +376,4 @@ async function previewScan() {
   return orders.map((o) => ({ order: o.orderNumber, name: o.shipTo.name, email: o.customerEmail, address: oneLine(o.shipTo), verified: o.shipTo.addressVerified, created: o.createDate, pastGrace: ssTime(o.createDate || o.orderDate) <= cutoff }));
 }
 
-module.exports = { runAddressScan, handleOwner, handleReply, addressStatus, previewScan, _EXTRACT_TOOL: EXTRACT_TOOL };
+module.exports = { runAddressScan, handleOwner, handleReply, addressStatus, previewScan, closeOrders, _EXTRACT_TOOL: EXTRACT_TOOL };

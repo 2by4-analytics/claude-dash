@@ -348,6 +348,11 @@ router.get('/hb/support/address/preview', async (req, res) => {
   try { res.json(await hbSupport.addressPreview()); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Body { orders: ['ABC123', ...], note } — mark bad-address records fixed, no emails. 409 mid-run.
+router.post('/hb/support/address/close', (req, res) => {
+  try { res.json(hbSupport.closeAddressOrders(Array.isArray(req.body.orders) ? req.body.orders : [], String(req.body.note || ''))); }
+  catch (e) { res.status(409).json({ error: e.message }); }
+});
 router.post('/hb/support/run', async (req, res) => {
   try { res.json(await hbSupport.runHbSupport()); }
   catch (e) { res.status(502).json({ error: e.message }); }
