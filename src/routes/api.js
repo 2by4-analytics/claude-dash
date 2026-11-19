@@ -132,6 +132,22 @@ router.post('/coc/upsale', async (req, res) => {
   }
 });
 
+// POST /api/hb/fulfillment-note — the HB site attaches per-order fulfillment
+// details (canvas designs / size / frames) to a CoC order; a 5-min job writes them
+// into the ShipStation order's notes (services/hb-fulfillment-notes). Same secret
+// as the order relay. GET /api/hb/fulfillment-notes?orderId= shows status.
+const hbFnotes = require('../services/hb-fulfillment-notes');
+router.post('/hb/fulfillment-note', (req, res) => {
+  const secret = process.env.HB_ORDER_SECRET;
+  if (!secret || req.get('x-hb-order-secret') !== secret) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  const { status, body } = hbFnotes.upsertNote(req.body || {});
+  res.status(status).json(body);
+});
+router.get('/hb/fulfillment-notes', (req, res) => res.json({ ok: true, notes: hbFnotes.getNotes(req.query.orderId) }));
+router.post('/hb/fulfillment-notes/run', async (req, res) => {
+  try { res.json(await hbFnotes.runFulfillmentNotes()); } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 // /api/coc/product* — the Happy Bakers site (Lovable) creates/updates its own
 // shop products in CoC campaign 15. Own secret (HB_PRODUCT_SECRET), separate from
 // the order secret. Fixed config + read-back checks live in services/hb-products.

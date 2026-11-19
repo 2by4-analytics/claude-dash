@@ -101,6 +101,13 @@ cron.schedule('*/5 * * * *', () => {
   track('hb-support', runHbSupport).catch((e) => console.error('[hb-support] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
+// Every 5 min (offset 2): HB per-order fulfillment details → ShipStation notes.
+const { runFulfillmentNotes } = require('./services/hb-fulfillment-notes');
+cron.schedule('2-59/5 * * * *', () => {
+  if (!process.env.SHIPSTATION_API_KEY) return;
+  track('hb-fulfillment-notes', runFulfillmentNotes).catch((e) => console.error('[hb-fnotes] cron failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
 // 7:30am CT daily: Happy Bakers inventory agent — forecast each month's Box item and
 // email Alan an [HB-INV-n] report (his replies are routed through the support agent).
 const { runInventory, runTemuSync } = require('./services/hb-inventory');

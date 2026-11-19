@@ -62,4 +62,4 @@ async function setEmail(orderNumber, email) {
   return out;
 }
 
-module.exports = { setEmail, awaitingShipment, getOrder, cancelOrder, isHb, badAddress, HB_STORE_IDS };
+module.exports = { setEmail, awaitingShipment, getOrder, cancelOrder, isHb, badAddress, HB_STORE_IDS, http, postableOptions };
