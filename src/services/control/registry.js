@@ -15,6 +15,8 @@ module.exports = [
   // No rerun: a re-run sends Alan the [HB-INV] email again.
   { id: 'hb-inventory', group: 'Dash jobs', type: 'dash-job', name: 'HB inventory report', schedule: 'daily 7:30 CT', maxAgeMin: 26 * H,
     needsEnv: ['HB_GHL_PIT'], link: '/api/hb/inventory/status' },
+  { id: 'hb-address-sheet', group: 'Dash jobs', type: 'dash-job', name: 'HB replied-address sheet sweep', schedule: 'Mondays 8:00 CT', maxAgeMin: 8 * D,
+    needsEnv: ['SHIPSTATION_API_KEY', 'GOOGLE_SERVICE_ACCOUNT_JSON'] },
   { id: 'cpp-snapshot', group: 'Dash jobs', type: 'dash-job', name: 'Sticker CPP snapshot', schedule: 'daily 5:00 CT', maxAgeMin: 26 * H, controls: ['rerun'] },
   { id: 'control-digest', group: 'Dash jobs', type: 'dash-job', name: 'Control morning email', schedule: 'daily 7:15 CT', maxAgeMin: 26 * H,
     needsEnv: ['GMAIL_USER', 'GMAIL_APP_PASSWORD'] },

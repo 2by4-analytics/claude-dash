@@ -353,6 +353,11 @@ router.post('/hb/support/address/close', (req, res) => {
   try { res.json(hbSupport.closeAddressOrders(Array.isArray(req.body.orders) ? req.body.orders : [], String(req.body.note || ''))); }
   catch (e) { res.status(409).json({ error: e.message }); }
 });
+// Monday replied-address sheet sweep now. ?write=0 = build rows only (no sheet write, no close, no email).
+router.post('/hb/support/address/sheet', async (req, res) => {
+  try { res.json(await hbSupport.runAddressSheetSweep({ write: req.query.write !== '0' })); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
 router.post('/hb/support/run', async (req, res) => {
   try { res.json(await hbSupport.runHbSupport()); }
   catch (e) { res.status(502).json({ error: e.message }); }

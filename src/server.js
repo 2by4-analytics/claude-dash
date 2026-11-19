@@ -116,6 +116,13 @@ cron.schedule('15 0-6,8-23 * * *', () => {
   track('temu-sync', runTemuSync).catch((e) => console.error('[hb-inventory] temu sync failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
+// Mondays 8:00 CT: re-check every replied bad address in ShipStation → rewrite the
+// "HB Bad Addresses — Replied" sheet, close shipped records, email Alan what needs a label.
+cron.schedule('0 8 * * 1', () => {
+  if (!process.env.SHIPSTATION_API_KEY || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return;
+  track('hb-address-sheet', () => require('./services/hb-support').runAddressSheetSweep()).catch((e) => console.error('[hb-address-sheet] failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
 // 7:15am CT daily: Control morning email: what's red/amber + what needs Alan.
 const control = require('./services/control');
 cron.schedule('15 7 * * *', () => {

@@ -683,6 +683,18 @@ function supportStatus() {
 
 // Close cases by hand with no emails (cleanup of error cases; the email route sends
 // Alan a "Done" per case). Refused mid-run so the run's saveAll can't overwrite it.
+// Monday sheet sweep. Holds the run lock (waits up to 3 min for a run to finish) so the
+// address state isn't reloaded under a running scan.
+async function runAddressSheetSweep({ write = true } = {}) {
+  for (let i = 0; running && i < 36; i++) await new Promise((r) => setTimeout(r, 5000));
+  if (running) throw new Error('agent run in progress, try again in a minute');
+  running = true;
+  try {
+    if (!state) loadAll();
+    return await require('./address-sheet').runSweep({ write, sendOwner: write ? sendOwner : null, closeOrders: async (orders, note) => address.closeOrders(orders, note) });
+  } finally { running = false; }
+}
+
 function closeAddressOrders(orders, note) {
   if (running) throw new Error('agent is mid-run, try again in a minute');
   return address.closeOrders(orders, note);
@@ -723,4 +735,4 @@ function setMode(next) {
   return mode();
 }
 
-module.exports = { closeAddressOrders, addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, actOnCase, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount, _unbackedClaims: unbackedClaims, _unshippedTees: unshippedTees };
+module.exports = { runAddressSheetSweep, closeAddressOrders, addressStatus: address.addressStatus, addressPreview: address.previewScan, runHbSupport, tryConversation, supportStatus, actOnCase, closeCases, editLesson, setMode, _planFor: planFor, _describeAccount: describeAccount, _unbackedClaims: unbackedClaims, _unshippedTees: unshippedTees };

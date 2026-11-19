@@ -354,6 +354,9 @@ function addressStatus() {
   return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, followupSentAt: r.followupSentAt || null, urgentSentAt: r.urgentSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
 }
 
+// Every record (the Monday sheet sweep reads them).
+function allRecords() { load(); return Object.values(st.orders); }
+
 // Staff close-out (Alan 11-19): mark records done by order number, no emails.
 function closeOrders(orderNumbers, note) {
   load();
@@ -376,4 +379,4 @@ async function previewScan() {
   return orders.map((o) => ({ order: o.orderNumber, name: o.shipTo.name, email: o.customerEmail, address: oneLine(o.shipTo), verified: o.shipTo.addressVerified, created: o.createDate, pastGrace: ssTime(o.createDate || o.orderDate) <= cutoff }));
 }
 
-module.exports = { runAddressScan, handleOwner, handleReply, addressStatus, previewScan, closeOrders, _EXTRACT_TOOL: EXTRACT_TOOL };
+module.exports = { runAddressScan, handleOwner, handleReply, addressStatus, previewScan, closeOrders, allRecords, _EXTRACT_TOOL: EXTRACT_TOOL };
