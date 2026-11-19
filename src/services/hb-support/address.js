@@ -4,7 +4,8 @@
 // an email from Maggie asking for their full address. Their reply is parsed and the new
 // address is emailed to Alan, who has Eric make a fresh label. No reply after
 // HB_ADDRESS_REMIND_HOURS (24) → Maggie sends one reminder; after HB_ADDRESS_STALE_DAYS (5)
-// → Alan gets a list of who never answered.
+// → Alan gets a list of who never answered; after HB_ADDRESS_URGENT_DAYS (10) → one
+// "URGENT: Your Order Is Stuck" email per customer.
 //
 // Modes (address.mode, Alan emails "address: auto|approve|off"):
 //   approve  Alan gets a numbered batch [HB-ADDR-n] and replies yes / skip 2 5 / only 1 3 / no
@@ -22,6 +23,10 @@ const { callTool } = require('./llm');
 const GRACE_HOURS = () => Number(process.env.HB_ADDRESS_GRACE_HOURS || 24);
 const REMIND_HOURS = () => Number(process.env.HB_ADDRESS_REMIND_HOURS || 24);
 const STALE_DAYS = () => Number(process.env.HB_ADDRESS_STALE_DAYS || 5);
+const URGENT_DAYS = () => Number(process.env.HB_ADDRESS_URGENT_DAYS || 10);
+// 11-19 Claude sent the urgent email by hand (tools/_hb-addr-urgent.js) to everyone asked
+// before this time, so those records count as already sent.
+const MANUAL_URGENT_CUTOFF = '2026-11-19T17:00:00.000Z';
 const PROPOSAL_GAP_MS = 3 * 3600 * 1000;
 const tag = (id) => `HB-ADDR-${id}`;
 const SIGNATURE = 'Happy baking!\nMaggie Bennett\nThe Happy Bakers';
@@ -85,6 +90,18 @@ function reminderText(r) {
   ].join('\n\n');
 }
 
+function urgentText(first, recs) {
+  const addrs = [...new Set(recs.map((r) => addressLines(r.shipTo)))];
+  return [
+    `Hi ${first},`,
+    "Your Happy Bakers order is stuck and can't ship until we have a shipping address that works. The address we have came back as undeliverable:",
+    addrs.length === 1 ? addrs[0] : addrs.map((a, i) => `Order ${i + 1}:\n${a}`).join('\n\n'),
+    'Please reply to this email with your full shipping address, including any apartment or unit number. If the address above is correct, just reply "looks good."',
+    "As soon as I hear back, I'll get your order on its way.",
+    SIGNATURE,
+  ].join('\n\n');
+}
+
 // Maggie nudges once at REMIND_HOURS; Alan gets one list of everyone still silent at
 // STALE_DAYS. Both stay awaiting_customer, so a late reply is still parsed.
 async function followUps(sendOwner) {
@@ -99,6 +116,23 @@ async function followUps(sendOwner) {
     } catch (e) { lines.push(`Reminder FAILED ${r.orderNumber} ${r.shipTo.name}: ${e.message}`); }
     save();
   }
+  // URGENT_DAYS with no reply → one "URGENT: Your Order Is Stuck" email per customer,
+  // covering all of their waiting orders (Alan 11-19).
+  for (const r of waiting) if (!r.urgentSentAt && r.askSentAt < MANUAL_URGENT_CUTOFF) r.urgentSentAt = MANUAL_URGENT_CUTOFF;
+  const urgentDue = [...new Set(waiting.filter((x) => !x.urgentSentAt && age(x) >= URGENT_DAYS() * 86400 * 1000).map((x) => x.email))];
+  for (const email of urgentDue) {
+    const recs = waiting.filter((x) => x.email === email && !x.urgentSentAt);
+    const r = recs[0];
+    try {
+      const contactId = r.contactId || await ghl.contactIdFor(email, firstName(r.shipTo.name));
+      const id = await ghl.sendEmail({ contactId, to: email, fromName: 'Maggie Bennett', subject: 'URGENT: Your Order Is Stuck', text: urgentText(firstName(r.shipTo.name), recs) });
+      const now = new Date().toISOString();
+      recs.forEach((x) => { x.urgentSentAt = now; x.urgentMessageId = id; });
+      lines.push(`Urgent email ${recs.map((x) => x.orderNumber).join(', ')} ${r.shipTo.name}`);
+    } catch (e) { lines.push(`Urgent email FAILED ${r.orderNumber} ${r.shipTo.name}: ${e.message}`); }
+    save();
+  }
+  save();
   const stale = waiting.filter((x) => !x.staleNotifiedAt && age(x) >= STALE_DAYS() * 86400 * 1000);
   if (stale.length) {
     const list = stale.map((r, i) => `${i + 1}. ${r.shipTo.name} <${r.email}>, order ${r.orderNumber}\n   ${oneLine(r.shipTo)}\n   Asked ${r.askSentAt.slice(0, 10)}${r.reminderSentAt ? `, reminded ${r.reminderSentAt.slice(0, 10)}` : ''}`);
@@ -293,7 +327,7 @@ async function handleReply(batch, { sendOwner, replyAsMaggie }) {
 
 function addressStatus() {
   load();
-  return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
+  return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, urgentSentAt: r.urgentSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
 }
 
 // Read-only preview of what the scan would find right now.
