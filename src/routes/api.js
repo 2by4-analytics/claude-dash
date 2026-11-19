@@ -131,6 +131,29 @@ router.post('/coc/upsale', async (req, res) => {
   }
 });
 
+// /api/coc/product* — the Happy Bakers site (Lovable) creates/updates its own
+// shop products in CoC campaign 15. Own secret (HB_PRODUCT_SECRET), separate from
+// the order secret. Fixed config + read-back checks live in services/hb-products.
+const hbProducts = require('../services/hb-products');
+function hbProductAuth(req, res) {
+  const secret = process.env.HB_PRODUCT_SECRET;
+  if (!secret || req.get('x-hb-product-secret') !== secret) { res.status(401).json({ ok: false, error: 'unauthorized' }); return false; }
+  return true;
+}
+const hbProductRoute = (fn) => async (req, res) => {
+  if (!hbProductAuth(req, res)) return;
+  try {
+    const { status, body } = await fn(req);
+    res.status(status).json(body);
+  } catch (err) {
+    console.error('[coc/product] failed:', err.response?.status || '', err.message);
+    res.status(502).json({ ok: false, error: 'coc_unreachable', details: [err.message] });
+  }
+};
+router.post('/coc/product', hbProductRoute((req) => hbProducts.createProduct(req.body || {})));
+router.post('/coc/product/update', hbProductRoute((req) => hbProducts.updateProduct(req.body || {})));
+router.get('/coc/products', hbProductRoute(() => hbProducts.listProducts()));
+
 // GET /api/dashboard/:clientId?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 router.get('/dashboard/:clientId', async (req, res) => {
   const { clientId } = req.params;
