@@ -91,6 +91,7 @@ const HB_ORDER_FIELDS = new Set([
   'shipFirstName', 'shipLastName', 'shipAddress1', 'shipAddress2', 'shipCity', 'shipState', 'shipPostalCode', 'shipCountry',
   'paySource', 'cardNumber', 'cardMonth', 'cardYear', 'cardSecurityCode', 'couponCode', 'affId', 'sourceValue1', 'sourceValue2',
   'productId', 'productQty', 'productPrice', 'productShipPrice', 'upsaleProductId', 'upsaleQty', 'upsalePrice', 'upsaleShipPrice',
+  'variantDetailId', // Import Upsale: variant of the single upsale product
 ]);
 function hbOrderAuth(req, res) {
   const secret = process.env.HB_ORDER_SECRET;
@@ -102,7 +103,7 @@ function hbOrderAuth(req, res) {
 function hbPickFields(body) {
   const out = {};
   for (const [k, v] of Object.entries(body || {})) {
-    if (HB_ORDER_FIELDS.has(k) || /^product\d+_(id|qty|price|shipPrice)$/.test(k)) out[k] = v;
+    if (HB_ORDER_FIELDS.has(k) || /^product\d+_(id|qty|price|shipPrice)$/.test(k) || /^variant\d+_id$/.test(k)) out[k] = v; // variantN_id = variant detail id for productN_id
   }
   return out;
 }
