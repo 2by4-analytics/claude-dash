@@ -54,6 +54,9 @@ const PRODUCT_TAGS = [
   // Christmas cookie cutter sets (2026-11-01): Classic, Whimsy, North Pole Magic, Ultimate 15.
   [[337, 339, 341, 343], 'hb cookie cutters'],
   [[275], 'hb scale'],
+  // Decor shop (2026-11-19, created by the site): 4-print canvas sets + espresso frame upgrades. POD by Eric.
+  [[363, 365, 367], 'hb canvas'],
+  [[369, 371, 373, 375, 377, 379], 'hb canvas frame'],
 ];
 
 // Pipeline stages in funnel order; a buyer sits in the last one they qualify for.
