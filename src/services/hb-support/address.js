@@ -4,7 +4,8 @@
 // an email from Maggie asking for their full address. Their reply is parsed and the new
 // address is emailed to Alan, who has Eric make a fresh label. No reply after
 // HB_ADDRESS_REMIND_HOURS (24) → Maggie sends one reminder; after HB_ADDRESS_STALE_DAYS (5)
-// → Alan gets a list of who never answered; after HB_ADDRESS_URGENT_DAYS (10) → one
+// → Alan gets a list of who never answered and Maggie sends a firmer follow-up
+// (HB_ADDRESS_FOLLOWUP_DAYS); after HB_ADDRESS_URGENT_DAYS (10) → one
 // "URGENT: Your Order Is Stuck" email per customer.
 //
 // Modes (address.mode, Alan emails "address: auto|approve|off"):
@@ -23,6 +24,7 @@ const { callTool } = require('./llm');
 const GRACE_HOURS = () => Number(process.env.HB_ADDRESS_GRACE_HOURS || 24);
 const REMIND_HOURS = () => Number(process.env.HB_ADDRESS_REMIND_HOURS || 24);
 const STALE_DAYS = () => Number(process.env.HB_ADDRESS_STALE_DAYS || 5);
+const FOLLOWUP_DAYS = () => Number(process.env.HB_ADDRESS_FOLLOWUP_DAYS || 5);
 const URGENT_DAYS = () => Number(process.env.HB_ADDRESS_URGENT_DAYS || 10);
 // 11-19 Claude sent the urgent email by hand (tools/_hb-addr-urgent.js) to everyone asked
 // before this time, so those records count as already sent.
@@ -90,6 +92,21 @@ function reminderText(r) {
   ].join('\n\n');
 }
 
+const addrBlock = (recs) => {
+  const addrs = [...new Set(recs.map((r) => addressLines(r.shipTo)))];
+  return addrs.length === 1 ? addrs[0] : addrs.map((a, i) => `Order ${i + 1}:\n${a}`).join('\n\n');
+};
+
+function followupText(first, recs) {
+  return [
+    `Hi ${first},`,
+    "I still need a shipping address for your Happy Bakers order. It's on hold until I hear from you, because the address we have came back as undeliverable:",
+    addrBlock(recs),
+    'Please reply with your full shipping address, including any apartment or unit number. If the address above is correct, just reply "looks good" and I\'ll send it as is.',
+    SIGNATURE,
+  ].join('\n\n');
+}
+
 function urgentText(first, recs) {
   const addrs = [...new Set(recs.map((r) => addressLines(r.shipTo)))];
   return [
@@ -116,22 +133,29 @@ async function followUps(sendOwner) {
     } catch (e) { lines.push(`Reminder FAILED ${r.orderNumber} ${r.shipTo.name}: ${e.message}`); }
     save();
   }
-  // URGENT_DAYS with no reply → one "URGENT: Your Order Is Stuck" email per customer,
-  // covering all of their waiting orders (Alan 11-19).
-  for (const r of waiting) if (!r.urgentSentAt && r.askSentAt < MANUAL_URGENT_CUTOFF) r.urgentSentAt = MANUAL_URGENT_CUTOFF;
-  const urgentDue = [...new Set(waiting.filter((x) => !x.urgentSentAt && age(x) >= URGENT_DAYS() * 86400 * 1000).map((x) => x.email))];
-  for (const email of urgentDue) {
-    const recs = waiting.filter((x) => x.email === email && !x.urgentSentAt);
-    const r = recs[0];
-    try {
-      const contactId = r.contactId || await ghl.contactIdFor(email, firstName(r.shipTo.name));
-      const id = await ghl.sendEmail({ contactId, to: email, fromName: 'Maggie Bennett', subject: 'URGENT: Your Order Is Stuck', text: urgentText(firstName(r.shipTo.name), recs) });
-      const now = new Date().toISOString();
-      recs.forEach((x) => { x.urgentSentAt = now; x.urgentMessageId = id; });
-      lines.push(`Urgent email ${recs.map((x) => x.orderNumber).join(', ')} ${r.shipTo.name}`);
-    } catch (e) { lines.push(`Urgent email FAILED ${r.orderNumber} ${r.shipTo.name}: ${e.message}`); }
-    save();
+  // One email per customer covering all their waiting orders: FOLLOWUP_DAYS → firmer
+  // follow-up, URGENT_DAYS → "URGENT: Your Order Is Stuck" (Alan 11-19).
+  for (const r of waiting) {
+    if (!r.urgentSentAt && r.askSentAt < MANUAL_URGENT_CUTOFF) r.urgentSentAt = MANUAL_URGENT_CUTOFF;
+    if (!r.followupSentAt && r.askSentAt < MANUAL_URGENT_CUTOFF) r.followupSentAt = MANUAL_URGENT_CUTOFF;
   }
+  const sendGrouped = async (field, days, maxDays, subject, textFn, label) => {
+    const due = [...new Set(waiting.filter((x) => !x[field] && !x.urgentSentAt && age(x) >= days * 86400 * 1000 && (!maxDays || age(x) < maxDays * 86400 * 1000)).map((x) => x.email))];
+    for (const email of due) {
+      const recs = waiting.filter((x) => x.email === email && !x[field]);
+      const r = recs[0];
+      try {
+        const contactId = r.contactId || await ghl.contactIdFor(email, firstName(r.shipTo.name));
+        const id = await ghl.sendEmail({ contactId, to: email, fromName: 'Maggie Bennett', subject, text: textFn(firstName(r.shipTo.name), recs) });
+        const now = new Date().toISOString();
+        recs.forEach((x) => { x[field] = now; });
+        lines.push(`${label} ${recs.map((x) => x.orderNumber).join(', ')} ${r.shipTo.name}`);
+      } catch (e) { lines.push(`${label} FAILED ${r.orderNumber} ${r.shipTo.name}: ${e.message}`); }
+      save();
+    }
+  };
+  await sendGrouped('followupSentAt', FOLLOWUP_DAYS(), URGENT_DAYS(), 'Still need your address for your Happy Bakers order', followupText, 'Day-5 email');
+  await sendGrouped('urgentSentAt', URGENT_DAYS(), 0, 'URGENT: Your Order Is Stuck', urgentText, 'Urgent email');
   save();
   const stale = waiting.filter((x) => !x.staleNotifiedAt && age(x) >= STALE_DAYS() * 86400 * 1000);
   if (stale.length) {
@@ -327,7 +351,7 @@ async function handleReply(batch, { sendOwner, replyAsMaggie }) {
 
 function addressStatus() {
   load();
-  return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, urgentSentAt: r.urgentSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
+  return { mode: st.mode, graceHours: GRACE_HOURS(), batches: st.batches, orders: Object.values(st.orders).map((r) => ({ order: r.orderNumber, name: r.shipTo.name, email: r.email, status: r.status, batch: r.batchId || null, askSentAt: r.askSentAt || null, reminderSentAt: r.reminderSentAt || null, followupSentAt: r.followupSentAt || null, urgentSentAt: r.urgentSentAt || null, staleNotifiedAt: r.staleNotifiedAt || null, newAddress: r.newAddress ? oneLine(r.newAddress) : null, note: r.fixedNote || r.error || null })) };
 }
 
 // Read-only preview of what the scan would find right now.
