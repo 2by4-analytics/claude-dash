@@ -10,6 +10,7 @@
 const nodemailer = require('nodemailer');
 const store = require('./hb-support/store');
 const ss = require('./hb-support/shipstation');
+const coc = require('./hb-support/coc');
 
 const FILE = 'fulfillment-notes';
 const OPEN = '[HB order details]';
@@ -78,7 +79,7 @@ async function runFulfillmentNotes() {
   for (const [id, rec] of Object.entries(s.notes)) {
     const age = now - Date.parse(rec.createdAt);
     const sinceWrite = rec.writtenAt ? now - Date.parse(rec.writtenAt) : 0;
-    if (rec.status === 'expired' || rec.status === 'missed') continue;
+    if (rec.status === 'expired' || rec.status === 'missed' || rec.status === 'void') continue;
     if (rec.status === 'written' && sinceWrite > RECHECK_AFTER_WRITE_MS) continue;
     if (age > GIVE_UP_MS) { rec.status = 'expired'; continue; }
     summary.checked++;
@@ -89,6 +90,10 @@ async function runFulfillmentNotes() {
       if (!orders.length) {
         summary.waiting++;
         if (age > NOT_FOUND_ALERT_MS && !rec.alerted) {
+          // The site attaches details as soon as the CoC order id exists, before the
+          // card settles, so a declined/refunded order lands here. Drop it quietly.
+          const cocStatus = await coc.orderStatus(id).catch(() => undefined);
+          if (cocStatus !== undefined && cocStatus !== 'COMPLETE') { rec.status = 'void'; rec.cocStatus = cocStatus; continue; }
           rec.alerted = true;
           await notify(`[HB order details] ${id} not in ShipStation yet`, [
             `Order ${id} has fulfillment details from the site, but no Happy Bakers ShipStation order after ${Math.round(age / H)}h.`,

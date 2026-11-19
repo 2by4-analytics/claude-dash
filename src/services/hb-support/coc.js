@@ -140,4 +140,10 @@ async function emailsForName(first, last) {
   return [...new Set(rows.filter((o) => norm(o.firstName) === norm(first) && norm(o.lastName) === norm(last)).map((o) => norm(o.emailAddress)).filter(Boolean))];
 }
 
-module.exports = { emailsForName, snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, changeEmail, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };
+/** CoC orderStatus for one order id (COMPLETE / DECLINED / REFUNDED / ...), or null if not found. */
+async function orderStatus(orderId) {
+  const [o] = await query('order/query', { orderId });
+  return o ? o.orderStatus || null : null;
+}
+
+module.exports = { orderStatus, emailsForName, snapshot, refundOrder, partialRefund, cancelPurchase, changeTeeSize, changeEmail, addNote, TEE_SIZES, TEE_PRODUCT_IDS, SHIPPED, LIVE_PURCHASE };
