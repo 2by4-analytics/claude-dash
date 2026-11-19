@@ -15,8 +15,9 @@ const RANK = { 'NEEDS NEW LABEL': 0, 'CHECK: shipped to a different address': 1,
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const oneLine = (t = {}) => [t.street1, t.street2, `${t.city}, ${t.state} ${t.postalCode}`].filter((x) => x && String(x).trim()).join(', ');
 const newLine = (a) => (a ? [a.street1, a.street2, `${a.city}, ${a.state} ${a.postalCode || a.zip || ''}`.trim()].filter((x) => x && String(x).trim()).join(', ') : '');
-// House/unit/zip numbers; ZIP+4 reduced to ZIP. Every number they gave must be on the label.
-const nums = (s) => (String(s).toUpperCase().replace(/(\d{5})-\d{4}/g, '$1').match(/\d+/g) || []);
+// House/unit numbers. Every number they gave must be on the label.
+// The ZIP is left out: ShipStation's validation corrects it (Amy Tzall 89123 → 89122).
+const nums = (s) => (String(s).toUpperCase().replace(/\b\d{5}(-\d{4})?\s*$/, '').match(/\d+/g) || []);
 const sameAddress = (want, got) => { const g = new Set(nums(got)); return nums(want).every((n) => g.has(n)); };
 
 let client = null;
@@ -39,9 +40,11 @@ async function buildRows() {
     await sleep(1600); // V1: 40 calls/min
     const orig = list.find((o) => o.orderStatus === 'cancelled') || list[0] || {};
     const live = list.filter((o) => o.orderStatus !== 'cancelled');
-    const shipped = live.find((o) => o.orderStatus === 'shipped');
-    const copy = shipped || live[0];
     const want = newLine(r.newAddress);
+    // Several copies (Courtney Marsell: two shipped): prefer one that matches their address.
+    const ok = (o) => sameAddress(want, oneLine(o.shipTo));
+    const shipped = live.find((o) => o.orderStatus === 'shipped' && ok(o)) || live.find((o) => o.orderStatus === 'shipped');
+    const copy = shipped || live.find(ok) || live[0];
     let status;
     if ((orig.advancedOptions || {}).storeId === TEE_STORE || r.storeId === TEE_STORE) status = shipped ? 'Shipped' : 'Brian (shirt)';
     else if (!copy) status = 'NEEDS NEW LABEL';
@@ -59,6 +62,10 @@ async function runSweep({ write = true, sendOwner = null, closeOrders = null } =
   const cur = (await sheets().spreadsheets.values.get({ spreadsheetId: SHEET_ID(), range: `'${tab}'!A1:Z2000` })).data.values || [];
   const oi = (cur[0] || []).indexOf('Order #'), ni = (cur[0] || []).findIndex((h) => /^Notes/.test(h));
   const notes = {}; if (oi >= 0 && ni >= 0) cur.slice(1).forEach((c) => { if (c[ni]) notes[c[oi]] = c[ni]; });
+  // A note with ok/same/fine on a CHECK row = staff signed off (Kitty Graham 11-19: her
+  // "710" reply was a typo of the original 170, Alan: "same as original").
+  rows.forEach((r) => { if (r.status === 'CHECK: shipped to a different address' && /\b(ok|okay|same|fine|correct)\b/i.test(notes[r.order] || '')) r.status = r.shipDate ? 'Shipped' : 'In ShipStation, not shipped yet'; });
+  rows.sort((a, b) => RANK[a.status] - RANK[b.status] || String(b.shipDate).localeCompare(String(a.shipDate)));
   const swept = new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago' });
   const values = [[...HEADER, `Swept ${swept}`], ...rows.map((r) => [r.status, r.order, r.name, r.email, r.want, r.orig, r.sentTo, r.shipDate, r.items, notes[r.order] || ''])];
   const action = rows.filter((r) => RANK[r.status] <= 1);
