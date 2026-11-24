@@ -333,16 +333,18 @@ const TEMU_LOG_TOOL = {
         items: {
           type: 'object',
           properties: {
-            sku: { type: 'string', description: 'Existing SKU from the Items list when it matches, else a new short UPPERCASE SKU' },
-            item_name: { type: 'string', description: 'Only for a NEW sku' },
-            qty: { type: 'number', description: 'Units in stock terms (e.g. a 2-pack of mats = 2 mats, as earlier rows did)' },
+            sku: { type: 'string', description: 'MUST be one of the SKUs in the ITEMS list. Never make one up. If no item matches, write no rows and ask in question' },
+            listing_qty: { type: 'number', description: 'The ×qty the order shows for this line (listings/packs bought)' },
+            pack_size: { type: 'number', description: 'Single units in ONE listing (1 for a single scale, 2 for a 2-pack, 4 for a box of 4)' },
+            pack_size_evidence: { type: 'string', description: 'Where the pack size comes from: the item name/variant text, or an earlier Ledger row from the same seller + price. If you have neither, ask instead' },
+            qty: { type: 'number', description: 'Single units in stock = listing_qty × pack_size' },
             total_cost: { type: 'number', description: "This row's share of the Order total (after coupons, with tax). Rows must add up to the Order total" },
             notes: { type: 'string', description: 'Like the earlier Temu rows: "Temu PO-…: qty x name, unit price, item total, coupons, tax = order total"' },
           },
-          required: ['sku', 'qty', 'total_cost', 'notes'],
+          required: ['sku', 'listing_qty', 'pack_size', 'pack_size_evidence', 'qty', 'total_cost', 'notes'],
         },
       },
-      question: { type: 'string', description: 'If the order is ambiguous (which SKU, pack size), ask instead of guessing. Empty when clear.' },
+      question: { type: 'string', description: 'If any line matches no SKU in ITEMS, or its pack size is unclear, ask Alan (name the PO, the line, seller and price) and write NO rows. Empty when clear.' },
     },
     required: ['rows'],
   },
@@ -353,12 +355,15 @@ async function logTemuOrder(L, po, o, today) {
   const out = await callTool({
     system: [
       'You keep the Happy Bakers inventory Ledger. Alan bought stock on Temu; turn the order into Ledger Inventory rows.',
-      'Use an existing SKU when the item matches (every digital kitchen/food scale is SCALE). Only record what the order shows; never invent a number. One row per SKU.',
+      'Every row must use a SKU from the ITEMS list (every digital kitchen/food scale is SCALE). You cannot create SKUs. If a line matches no item, write no rows and ask in question; Alan will reply with the SKU.',
+      'Temu titles are cut off and often start with a seasonal tag ("[Halloween Christmas Gift..."), so do not match on the title alone. Match on the seller (the ITEMS supplier column), variant, unit price and the earlier rows.',
+      'qty is SINGLE units: listing_qty × pack_size. A 2-pack ×10 = 20; a box of 4 ×20 = 80. Take the pack size from the name/variant text or an earlier row from the same seller at a similar price. If neither shows it, ask; never assume 1 for an item that could be a multi-pack.',
+      'Only record what the order shows; never invent a number. One row per SKU.',
       'total_cost = the share of the Order total (what was actually paid: after coupons and bonuses, with tax), split across rows by their item prices.',
     ].join('\n'),
     tool: TEMU_LOG_TOOL,
     prompt: [
-      `ITEMS (sku · name)\n${Object.values(L.items).map((i) => `${i.sku} · ${i.name}`).join('\n')}`,
+      `ITEMS (sku · name · supplier)\n${Object.values(L.items).map((i) => `${i.sku} · ${i.name} · ${i.supplier || '?'}`).join('\n')}`,
       `EARLIER TEMU ROWS (sku · qty · notes)\n${examples || '(none)'}`,
       `ORDER ${po}, placed ${o.ordered}\n${o.items.map((i) => `${i.qty} × ${i.name} | ${i.variant || ''} | ${i.seller || ''} | $${i.unit_price ?? '?'} each`).join('\n')}\nItem(s) total: $${o.itemTotal ?? '?'} · Subtotal: $${o.subtotal ?? '?'} · Order total: $${o.orderTotal ?? '?'}`,
     ].join('\n\n'),
@@ -368,9 +373,17 @@ async function logTemuOrder(L, po, o, today) {
   const paid = rows.reduce((s, r) => s + (Number(r.total_cost) || 0), 0);
   if (!rows.length) throw new Error('no rows');
   if (o.orderTotal != null && Math.abs(paid - o.orderTotal) > 0.05) throw new Error(`rows add to ${money(paid)}, the order total is ${money(o.orderTotal)}`);
+  // Check every row before writing any, so a bad line never leaves half an order in the Ledger.
+  for (const r of rows) {
+    const sku = String(r.sku || '').toUpperCase();
+    if (!L.items[sku]) throw new Error(`"${r.sku}" is not a SKU in the Items tab (line: ${r.notes}). Reply with the right SKU and pack size`);
+    if (!(r.pack_size >= 1) || !(r.listing_qty > 0) || Math.abs(r.listing_qty * r.pack_size - r.qty) > 0.001) throw new Error(`${sku}: qty ${r.qty} doesn't equal ${r.listing_qty} listings × pack of ${r.pack_size}. Reply with the pack size`);
+  }
   const done = [];
   for (const r of rows) {
-    const res = await logPurchase(L, { ...r, date: o.ordered, notes: r.notes.includes(po) ? r.notes : `${po}: ${r.notes}` }, { today, poHint: po, source: 'alan2by4 Gmail' });
+    const packNote = r.pack_size > 1 ? ` [${r.listing_qty} × pack of ${r.pack_size} = ${r.qty}; pack size from: ${r.pack_size_evidence}]` : '';
+    const notes = (r.notes.includes(po) ? r.notes : `${po}: ${r.notes}`) + packNote;
+    const res = await logPurchase(L, { ...r, date: o.ordered, notes }, { today, poHint: po, source: 'alan2by4 Gmail', allowNewSku: false });
     done.push(res.done || `Skipped: ${res.skipped}`);
   }
   return done;
@@ -425,9 +438,10 @@ const ACTION_TOOL = {
           type: 'object',
           properties: {
             type: { type: 'string', enum: ['log_purchase', 'set_month', 'set_setting'] },
-            sku: { type: 'string', description: 'Existing SKU from the Items list when it matches, else a new short UPPERCASE SKU' },
-            item_name: { type: 'string', description: 'Only for a NEW sku' },
-            qty: { type: 'number' },
+            sku: { type: 'string', description: 'A SKU from the Items list. A new short UPPERCASE SKU ONLY when Alan himself says this is a new item (then set new_item)' },
+            new_item: { type: 'boolean', description: 'true ONLY when Alan explicitly says this is a new item not in the Items list. Never set it because a Temu title did not match' },
+            item_name: { type: 'string', description: 'Only for a new_item' },
+            qty: { type: 'number', description: 'Single units (a box of 4 ×20 = 80). Ask if the pack size is unclear' },
             total_cost: { type: 'number', description: 'All-in total paid incl. tax/shipping, minus coupons' },
             unit_cost: { type: 'number', description: 'Only if no total was given' },
             date: { type: 'string', description: 'YYYY-MM-DD order date; today if not said' },
@@ -451,12 +465,13 @@ const poNumbers = (s) => [...new Set(String(s || '').match(/PO-\d{3}-\d{10,}/g) 
 
 // One Ledger Inventory row + the item's blended unit_cost. A PO already in an
 // Inventory row's notes for that SKU is skipped, so the same order never counts twice.
-async function logPurchase(L, a, { today, poHint = '', source }) {
+async function logPurchase(L, a, { today, poHint = '', source, allowNewSku = false }) {
   const sku = String(a.sku || '').toUpperCase();
   if (!sku || !(a.qty > 0) || (a.total_cost == null && a.unit_cost == null)) throw new Error('purchase is missing the SKU, quantity or cost');
   const po = poNumbers(`${a.notes} ${poHint}`)[0];
   const dupe = po && L.inventory.find((r) => r.sku === sku && String(r.notes || '').includes(po));
   if (dupe) return { skipped: `${po} is already in the Ledger (${dupe.qty} × ${sku}, ${dupe.date}). Nothing added.` };
+  if (!L.items[sku] && !allowNewSku) throw new Error(`"${sku}" is not a SKU in the Items tab; the agent doesn't create SKUs on its own`);
   if (!L.items[sku]) { await ledger.addItem({ sku, name: a.item_name || sku, notes: 'Added by the inventory agent' }); L.items[sku] = { sku, name: a.item_name || sku }; }
   const unit = a.total_cost != null ? a.total_cost / a.qty : a.unit_cost;
   await ledger.addPurchase({ date: a.date || today, sku, qty: a.qty, unitCost: Number(unit.toFixed(4)), paidBy: a.paid_by || 'Alan', location: 'Shipsem', notes: `${a.notes || ''}${a.total_cost != null ? ` (${money(a.total_cost)} total)` : ''} [logged by inventory agent from ${source}]`.trim() });
@@ -502,7 +517,7 @@ async function handleOwner(msg) {
   for (const a of out.actions || []) {
     try {
       if (a.type === 'log_purchase') {
-        const r = await logPurchase(L, a, { today, poHint: msg.subject, source: "Alan's email" });
+        const r = await logPurchase(L, a, { today, poHint: msg.subject, source: "Alan's email", allowNewSku: !!a.new_item });
         (r.skipped ? skipped : done).push(r.skipped || r.done);
       } else if (a.type === 'set_month') {
         const sku = a.sku ? String(a.sku).toUpperCase() : null;

@@ -72,7 +72,7 @@ async function read() {
   const tab = Object.fromEntries(wanted.map((n, i) => [n, r.data.valueRanges[i].values || []]));
 
   const settings = Object.fromEntries(rowsOf(tab.Settings).map((r) => [String(r.key).trim(), r.value]));
-  const items = Object.fromEntries(rowsOf(tab.Items).filter((r) => r.sku).map((r) => [String(r.sku).trim().toUpperCase(), { sku: String(r.sku).trim().toUpperCase(), name: r.name || '', unitCost: num(r.unit_cost), row: r._row }]));
+  const items = Object.fromEntries(rowsOf(tab.Items).filter((r) => r.sku).map((r) => [String(r.sku).trim().toUpperCase(), { sku: String(r.sku).trim().toUpperCase(), name: r.name || '', unitCost: num(r.unit_cost), supplier: r.supplier || '', row: r._row }]));
   const inventory = rowsOf(tab.Inventory).filter((r) => r.sku && num(r.qty) != null)
     .map((r) => ({ date: isoDate(r.date), sku: String(r.sku).trim().toUpperCase(), qty: num(r.qty), unitCost: num(r.unit_cost), paidBy: r.paid_by, location: r.location, notes: r.notes || '' }));
   const offers = rowsOf(tab.Offers).filter((r) => num(r.coc_product_id) != null)
