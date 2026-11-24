@@ -62,4 +62,25 @@ async function setEmail(orderNumber, email) {
   return out;
 }
 
-module.exports = { setEmail, awaitingShipment, getOrder, cancelOrder, isHb, badAddress, HB_STORE_IDS, http, postableOptions };
+// The warehouse's own word on whether a CoC order left: ShipStation orderNumber = CoC orderId.
+// CoC never hears back about untracked First-Class envelopes (most sticker orders), so its
+// fulfillment stays PENDING forever; this is the source of truth (Noel 9D465B033F, Angela
+// 124602AEC2: both shipped in 2 days while CoC said PENDING). A replacement order keeps the
+// orderNumber (orderKey + "-R"), so any shipped HB order with that number counts.
+async function shipInfo(orderNumber) {
+  const r = await http().get('/orders', { params: { orderNumber } });
+  const hb = (r.data.orders || []).filter((o) => isHb(o) && String(o.orderNumber) === String(orderNumber));
+  if (!hb.length) return { found: false };
+  const shipped = hb.filter((o) => o.orderStatus === 'shipped').sort((a, b) => String(a.shipDate).localeCompare(String(b.shipDate)));
+  if (!shipped.length) return { found: true, shipped: false, status: hb.map((o) => o.orderStatus).join(', ') };
+  const o = shipped[shipped.length - 1];
+  let carrier = null, service = null, tracking = null;
+  try {
+    const sh = await http().get('/shipments', { params: { orderNumber, includeShipmentItems: false } });
+    const live = (sh.data.shipments || []).filter((x) => !x.voided && x.orderId === o.orderId).pop() || (sh.data.shipments || []).filter((x) => !x.voided).pop();
+    if (live) ({ carrierCode: carrier, serviceCode: service, trackingNumber: tracking } = live);
+  } catch { /* the ship date is what matters */ }
+  return { found: true, shipped: true, status: 'shipped', shipDate: String(o.shipDate || '').slice(0, 10), carrier, service, tracking: tracking || null };
+}
+
+module.exports = { shipInfo, setEmail, awaitingShipment, getOrder, cancelOrder, isHb, badAddress, HB_STORE_IDS, http, postableOptions };

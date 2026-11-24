@@ -79,7 +79,21 @@ async function accountFor(email, texts, fromName = '') {
     snap.name = snap.name || s.name;
     snap.altEvidence = { ...(snap.altEvidence || {}), [alt]: await typoEvidence(alt, email) };
   }
+  await addShipStation(snap.orders);
   return snap;
+}
+
+// Shipped-or-not comes from ShipStation, not CoC: CoC leaves every untracked envelope
+// PENDING, and the agent kept telling customers shipped orders "haven't shipped" (11-23).
+// Orders with no fulfillment (digital, rebills that create none) are skipped.
+async function addShipStation(orders) {
+  for (const o of orders) {
+    if (!o.fulfillments.length || o.ss) continue;
+    try {
+      o.ss = await shipstation.shipInfo(o.orderId);
+      if (o.ss.shipped) o.shipped = true;
+    } catch (e) { o.ss = { error: e.message }; }
+  }
 }
 
 // Checkout typos (Elaine 11-02: paid as mesteven@comast.net, writes from @comcast.net).
@@ -108,6 +122,20 @@ async function typoEvidence(alt, writer) {
 }
 
 // ─── account formatting (for prompts and for Alan) ──────────────────────────
+function shipText(o) {
+  const ss = o.ss || {};
+  if (ss.shipped) {
+    const how = [ss.carrier === 'stamps_com' ? 'USPS' : ss.carrier, ss.service === 'usps_first_class_mail' ? 'First-Class' : ss.service].filter(Boolean).join(' ');
+    return `SHIPPED ${ss.shipDate}${how ? ` via ${how}` : ''} (${ss.tracking ? `tracking ${ss.tracking}` : 'envelope, no tracking number'})`;
+  }
+  if (ss.found) return `not shipped yet (warehouse status: ${ss.status})`;
+  if (o.shipped) return 'SHIPPED';
+  if (!o.fulfillments.length) return 'not shipped (digital/no fulfillment)';
+  const cocStatus = o.fulfillments.map((f) => f.status).join(', ');
+  return ss.error ? `UNKNOWN: couldn't check the warehouse (${ss.error.slice(0, 60)}); CoC says ${cocStatus}, which stays PENDING even after envelopes ship`
+    : `not in the warehouse system yet (CoC: ${cocStatus})`;
+}
+
 function describeAccount(snap) {
   if (!snap.orders.length) return `No Checkout Champ orders for ${snap.email}.`;
   const lines = [];
@@ -119,7 +147,7 @@ function describeAccount(snap) {
     }
   }
   for (const o of snap.orders) {
-    const ship = o.shipped ? 'SHIPPED' : `not shipped (${o.fulfillments.map((f) => f.status).join(', ') || 'digital/no fulfillment'})`;
+    const ship = shipText(o);
     lines.push(`Order ${o.orderId}${o.email ? ` (other email ${o.email})` : ''} · ${o.date} · ${o.type} · ${o.status} · ${money(o.total)} (refundable ${money(o.refundRemaining)}) · ${o.card || 'card ?'} · ${ship}`);
     for (const i of o.items) lines.push(`  - [${i.productId}] ${i.name} ${money(i.price)}${i.shipping ? ` + ${money(i.shipping)} s&h` : ''}${i.purchaseId ? ` · subscription ${i.purchaseId} ${i.purchaseStatus}${i.nextBillDate ? ` next bill ${i.nextBillDate}` : ''}` : ''}`);
   }
@@ -205,6 +233,7 @@ async function loadNamedAlts(snap, actions) {
     const s = await coc.snapshot(from);
     snap.orders.push(...s.orders.map((o) => ({ ...o, email: from })));
   }
+  await addShipStation(snap.orders);
 }
 
 // Owner-directed actions: same ownership checks, but shipped orders are allowed.
