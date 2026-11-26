@@ -108,6 +108,14 @@ cron.schedule('2-59/5 * * * *', () => {
   track('hb-fulfillment-notes', runFulfillmentNotes).catch((e) => console.error('[hb-fnotes] cron failed:', e.message));
 }, { timezone: 'America/Chicago' });
 
+// Every 5 min (offset 3): archive [HB-CS-n] emails in Alan's Gmail inbox once case n is
+// closed (Dash never touched his inbox before 11-26, so closed cases piled up there).
+const { tidyInbox } = require('./services/hb-support/inbox-tidy');
+cron.schedule('3-59/5 * * * *', () => {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
+  track('hb-inbox-tidy', () => tidyInbox().then((r) => (r.error ? { ...r, errors: [r.error] } : r))).catch((e) => console.error('[hb-inbox-tidy] cron failed:', e.message));
+}, { timezone: 'America/Chicago' });
+
 // 7:30am CT daily: Happy Bakers inventory agent — forecast each month's Box item and
 // email Alan an [HB-INV-n] report (his replies are routed through the support agent).
 const { runInventory, runTemuSync } = require('./services/hb-inventory');

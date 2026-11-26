@@ -19,6 +19,8 @@ module.exports = [
     needsEnv: ['SHIPSTATION_API_KEY', 'GOOGLE_SERVICE_ACCOUNT_JSON'] },
   { id: 'hb-fulfillment-notes', group: 'Dash jobs', type: 'dash-job', name: 'HB order details → ShipStation notes', schedule: 'every 5 min', maxAgeMin: 30,
     needsEnv: ['SHIPSTATION_API_KEY'] },
+  { id: 'hb-inbox-tidy', group: 'Dash jobs', type: 'dash-job', name: 'HB-CS closed cases → archived in Alan\'s Gmail', schedule: 'every 5 min', maxAgeMin: 30,
+    needsEnv: ['GMAIL_USER', 'GMAIL_APP_PASSWORD'] },
   { id: 'cpp-snapshot', group: 'Dash jobs', type: 'dash-job', name: 'Sticker CPP snapshot', schedule: 'daily 5:00 CT', maxAgeMin: 26 * H, controls: ['rerun'] },
   { id: 'control-digest', group: 'Dash jobs', type: 'dash-job', name: 'Control morning email', schedule: 'daily 7:15 CT', maxAgeMin: 26 * H,
     needsEnv: ['GMAIL_USER', 'GMAIL_APP_PASSWORD'] },
