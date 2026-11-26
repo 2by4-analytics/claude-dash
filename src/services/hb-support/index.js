@@ -616,7 +616,11 @@ async function runHbSupport() {
         // All owner answers share ONE conversation (Debora got her reply twice, 10-24).
         for (const om of ownerMsgs) { if (!(await inventory.handleOwner(om)) && !(await address.handleOwner(om, addressHelpers(conv)))) await handleOwner(om); seen.add(om.id); summary.owner++; }
         const email = custMsgs.filter((x) => x.type === 'TYPE_EMAIL' && x.from);
-        const other = custMsgs.filter((x) => x.type !== 'TYPE_EMAIL');
+        // GHL logs "DnD enabled by customer" (an unsubscribe) as an inbound ACTIVITY_CONTACT
+        // message. It isn't from the customer and needs nothing, but it became an
+        // awaiting_owner case + email each time (21 of 42 open cases on 11-26).
+        const SYSTEM_ACTIVITY = /^\s*(DnD (enabled|disabled) by customer|DND (enabled|disabled))\b/i;
+        const other = custMsgs.filter((x) => x.type !== 'TYPE_EMAIL' && !(x.type === 'TYPE_ACTIVITY_CONTACT' && SYSTEM_ACTIVITY.test(x.text || '')));
         if (email.length) {
           if (!(await address.handleReply(email, addressHelpers(conv)))) await handleCustomer(conv, email, { dryRun: false });
           email.forEach((x) => seen.add(x.id));
