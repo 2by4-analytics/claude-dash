@@ -1,16 +1,50 @@
-// Archives [HB-CS-n] emails in Alan's Gmail inbox once case n is closed in Dash.
-// Dash sends these from hello@ via GHL and never touched alan@2by4llc.com, so closed
-// cases piled up in the inbox (Alan, 11-26). Uses the same app password as the
-// Control digest (IMAP). A new customer message on a closed case opens a NEW case
-// number (index.js handleConversation only reopens awaiting_owner), so archiving a
-// closed case's thread can't hide anything new. "Done" emails go out with the case
-// already closed, so they leave the inbox on the next run (acts as the Done filter).
+// Keeps Alan's Gmail inbox free of Happy Bakers agent mail he no longer needs to see.
+// Dash sends from hello@ via GHL and never touched alan@2by4llc.com, so it piled up
+// (Alan, 11-26). Uses the same app password as the Control digest (IMAP). Mail is
+// MOVED to All Mail (archived), never deleted. Rules:
+// - [HB-CS-n]: archived once case n is done. A new message on a closed case opens a NEW
+//   case number (index.js only reopens awaiting_owner), so this can't hide anything new.
+//   "Done" emails go out already closed, so they leave on the next run.
+// - "<Customer> via The Happy Baker" (hello@mg.happybakerhq.com): GHL's copy of every
+//   inbound customer email. The agent handles each one within 5 min and emails an
+//   [HB-CS-n] when it needs Alan, so copies older than 30 min are archived.
+// - [HB-ADDR-FYI]: archived. [HB-ADDR-STALE]: archived after 2 days (orders stay
+//   cancelled; nothing to do). [HB-ADDR-SWEEP]: only the newest stays. [HB-ADDR-FIX]
+//   <order>: archived once that order's bad-address record is fixed.
 if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
 const { ImapFlow } = require('imapflow');
 const store = require('./store');
 
+const COPY_MIN_AGE_MS = 30 * 60 * 1000;
+const STALE_MIN_AGE_MS = 2 * 24 * 3600 * 1000;
+
 let running = false;
 let lastRun = null;
+
+// Pure: which inbox messages to archive. msgs = [{ uid, subject, fromName, fromAddr, date }]
+function decide(msgs, { cases = {}, addressOrders = [], now = Date.now() } = {}) {
+  const archive = new Set();
+  const why = {};
+  const mark = (m, reason) => { archive.add(m.uid); why[reason] = (why[reason] || 0) + 1; };
+  const fixed = new Set(addressOrders.filter((r) => r.status === 'fixed').map((r) => String(r.orderNumber)));
+  const sweeps = msgs.filter((m) => /\[HB-ADDR-SWEEP\]/i.test(m.subject)).sort((a, b) => b.date - a.date);
+  const newestSweep = sweeps[0] && sweeps[0].uid;
+  for (const m of msgs) {
+    const s = m.subject || '';
+    const age = now - (m.date || now);
+    const cs = /HB-CS-(\d+)/i.exec(s);
+    if (cs) { if (cases[cs[1]] && cases[cs[1]].status === 'done') mark(m, 'cs closed'); continue; }
+    if (/\[HB-ADDR-FYI\]/i.test(s)) { mark(m, 'addr fyi'); continue; }
+    if (/\[HB-ADDR-STALE\]/i.test(s)) { if (age > STALE_MIN_AGE_MS) mark(m, 'addr stale'); continue; }
+    if (/\[HB-ADDR-SWEEP\]/i.test(s)) { if (m.uid !== newestSweep) mark(m, 'addr sweep (older)'); continue; }
+    const fix = /\[HB-ADDR-FIX\].*order\s+([A-Z0-9-]+)/i.exec(s);
+    if (fix) { if (fixed.has(fix[1].replace(/-R$/i, ''))) mark(m, 'addr fixed'); continue; }
+    if (/hello@mg\.happybakerhq\.com/i.test(m.fromAddr || '') && / via The Happy Baker/i.test(m.fromName || '')) {
+      if (age > COPY_MIN_AGE_MS) mark(m, 'customer copy');
+    }
+  }
+  return { archive: [...archive], why };
+}
 
 async function tidyInbox({ dryRun = false } = {}) {
   const user = process.env.GMAIL_USER;
@@ -18,32 +52,33 @@ async function tidyInbox({ dryRun = false } = {}) {
   if (!user || !pass) return { skipped: 'GMAIL_USER / GMAIL_APP_PASSWORD not set' };
   if (running) return { skipped: 'already running' };
   running = true;
-  const out = { at: new Date().toISOString(), dryRun, inInbox: 0, archived: [], kept: [] };
+  const out = { at: new Date().toISOString(), dryRun, inInbox: 0, archived: 0, why: {}, kept: [] };
   const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth: { user, pass }, logger: false });
   try {
     const cases = store.load('cases', {});
+    const addr = store.load('address', {});
+    const addressOrders = Array.isArray(addr.orders) ? addr.orders : Object.values(addr.orders || {});
     await client.connect();
-    const boxes = await client.list();
-    const all = boxes.find((b) => b.specialUse === '\\All');
+    const all = (await client.list()).find((b) => b.specialUse === '\\All');
     if (!all) throw new Error('no All Mail folder');
     const lock = await client.getMailboxLock('INBOX');
     try {
-      const uids = await client.search({ gmraw: 'in:inbox subject:"HB-CS-"' }, { uid: true });
+      const uids = await client.search({ gmraw: 'in:inbox {subject:"HB-CS-" subject:"HB-ADDR-" from:hello@mg.happybakerhq.com}' }, { uid: true });
       out.inInbox = uids.length;
-      const archive = [];
+      const msgs = [];
       if (uids.length) {
-        for await (const m of client.fetch(uids, { envelope: true }, { uid: true })) {
-          const subject = m.envelope?.subject || '';
-          const id = (/HB-CS-(\d+)/i.exec(subject) || [])[1];
-          const c = id && cases[id];
-          if (c && c.status === 'done') { archive.push(m.uid); out.archived.push(`#${id}`); }
-          else out.kept.push(`#${id || '?'} ${c ? c.status : 'unknown case'}`);
+        for await (const m of client.fetch(uids, { envelope: true, internalDate: true }, { uid: true })) {
+          const f = (m.envelope && m.envelope.from && m.envelope.from[0]) || {};
+          msgs.push({ uid: m.uid, subject: m.envelope?.subject || '', fromName: f.name || '', fromAddr: f.address || '', date: new Date(m.internalDate || m.envelope?.date || Date.now()).getTime() });
         }
       }
-      if (archive.length && !dryRun) await client.messageMove(archive, all.path, { uid: true });
+      const d = decide(msgs, { cases, addressOrders });
+      out.archived = d.archive.length;
+      out.why = d.why;
+      const keep = new Set(d.archive);
+      out.kept = msgs.filter((m) => !keep.has(m.uid)).map((m) => m.subject.slice(0, 80));
+      if (d.archive.length && !dryRun) await client.messageMove(d.archive, all.path, { uid: true });
     } finally { lock.release(); }
-    out.archived = [...new Set(out.archived)];
-    out.kept = [...new Set(out.kept)];
   } catch (e) {
     out.error = e.message;
   } finally {
@@ -54,4 +89,4 @@ async function tidyInbox({ dryRun = false } = {}) {
   return out;
 }
 
-module.exports = { tidyInbox, tidyStatus: () => lastRun };
+module.exports = { tidyInbox, tidyStatus: () => lastRun, _decide: decide };
