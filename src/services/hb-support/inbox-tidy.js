@@ -11,6 +11,8 @@
 // - [HB-ADDR-FYI]: archived. [HB-ADDR-STALE]: archived after 2 days (orders stay
 //   cancelled; nothing to do). [HB-ADDR-SWEEP]: only the newest stays. [HB-ADDR-FIX]
 //   <order>: archived once that order's bad-address record is fixed.
+// - [HB-INV-n] (inventory reports, Temu logs/problems): only the highest n stays. Each
+//   daily report repeats whatever is still open, so older ones are superseded.
 if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
 const { ImapFlow } = require('imapflow');
 const store = require('./store');
@@ -29,11 +31,15 @@ function decide(msgs, { cases = {}, addressOrders = [], now = Date.now() } = {})
   const fixed = new Set(addressOrders.filter((r) => r.status === 'fixed').map((r) => String(r.orderNumber)));
   const sweeps = msgs.filter((m) => /\[HB-ADDR-SWEEP\]/i.test(m.subject)).sort((a, b) => b.date - a.date);
   const newestSweep = sweeps[0] && sweeps[0].uid;
+  const invNums = msgs.map((m) => Number((/\[HB-INV-(\d+)\]/i.exec(m.subject || '') || [])[1])).filter(Boolean);
+  const newestInv = invNums.length ? Math.max(...invNums) : null;
   for (const m of msgs) {
     const s = m.subject || '';
     const age = now - (m.date || now);
     const cs = /HB-CS-(\d+)/i.exec(s);
     if (cs) { if (cases[cs[1]] && cases[cs[1]].status === 'done') mark(m, 'cs closed'); continue; }
+    const inv = /\[HB-INV-(\d+)\]/i.exec(s);
+    if (inv) { if (Number(inv[1]) !== newestInv) mark(m, 'inv (older)'); continue; }
     if (/\[HB-ADDR-FYI\]/i.test(s)) { mark(m, 'addr fyi'); continue; }
     if (/\[HB-ADDR-STALE\]/i.test(s)) { if (age > STALE_MIN_AGE_MS) mark(m, 'addr stale'); continue; }
     if (/\[HB-ADDR-SWEEP\]/i.test(s)) { if (m.uid !== newestSweep) mark(m, 'addr sweep (older)'); continue; }
@@ -63,7 +69,7 @@ async function tidyInbox({ dryRun = false } = {}) {
     if (!all) throw new Error('no All Mail folder');
     const lock = await client.getMailboxLock('INBOX');
     try {
-      const uids = await client.search({ gmraw: 'in:inbox {subject:"HB-CS-" subject:"HB-ADDR-" from:hello@mg.happybakerhq.com}' }, { uid: true });
+      const uids = await client.search({ gmraw: 'in:inbox {subject:"HB-CS-" subject:"HB-ADDR-" subject:"HB-INV-" from:hello@mg.happybakerhq.com}' }, { uid: true });
       out.inInbox = uids.length;
       const msgs = [];
       if (uids.length) {
