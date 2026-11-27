@@ -395,6 +395,10 @@ async function runTemuSync({ notify = true } = {}) {
   state.temuLogged = state.temuLogged || [];
   const L = await ledger.read();
   let t = await syncTemu({ ledgerInventory: L.inventory });
+  // A PO logged by hand (Alan's reply, or Claude in the sheet) leaves notLogged but used
+  // to stay in temuFailed forever, so every run and the 7:30 report kept repeating its
+  // "couldn't log" question (11-26: 4 POs logged 11-25 were still reported as failed).
+  for (const po of Object.keys(state.temuFailed)) if (!t.notLogged.includes(po)) delete state.temuFailed[po];
   const logged = [], failed = [];
   for (const po of t.notLogged) {
     const o = t.orders[po];
